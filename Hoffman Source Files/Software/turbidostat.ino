@@ -3,7 +3,7 @@
  *  AUTHOR: Christian Wohltat, Stefan Hoffman
  *    DATE: 2016 05 09
  *
- *  PURPOSE: 
+ *  PURPOSE:
  */
 #define TURBIDOSTAT_VERSION  "0.2"
 #define NO_PORTB_PINCHANGES // to indicate that port b will not be used for pin change interrupts
@@ -17,7 +17,7 @@
 
 #define SENSOR_A_PIN  2
 #define SENSOR_B_PIN  3
-#define HALLPIN       4 
+#define HALLPIN       4
 #define PUMPPIN       5
 #define STIRRERPIN    6
 #define AIRPUMPPIN    10
@@ -63,13 +63,13 @@ unsigned long pumpPower = 255;
 unsigned long airpumpPower = 0;
 unsigned long pumpPulsDuration = 100;  // in ms
 unsigned long pumpPulsWait = 5000;     // in ms
-byte thresholdCnt = 0;        
+byte thresholdCnt = 0;
 #define NTIMESTHRESHOLD  3
 
 
 //////////////////////////////
 //
-// PROTOTYPES 
+// PROTOTYPES
 //
 //////////////////////////////
 void            processSerialBuffer();
@@ -98,7 +98,7 @@ void irq3()
 /*
  * From sample interrupt code published by Noah Stahl on his blog, at:
  * http://arduinomega.blogspot.com/p/arduino-code.html
- * 
+ *
  */
 
 
@@ -106,7 +106,7 @@ void irq3()
 
 Name:           Timer2init
 
-Function:       Init timer 2 to interrupt periodically. Call this from 
+Function:       Init timer 2 to interrupt periodically. Call this from
                 the Arduino setup() function.
 
 Description:    The pre-scaler and the timer count divide the timer-counter
@@ -153,7 +153,7 @@ extern volatile unsigned long msecs = 0;
 /*** FUNC
 Name:       Timer2 ISR
 Function:   Handles the Timer2-overflow interrupt
-Description:    
+Description:
 Parameters: void
 Returns:    void
 FUNC ***/
@@ -184,7 +184,7 @@ void eeprom_load(){
   eeprom_read_block(&targetI,           (const void*)EEPROM_TARGET_I + EEPROM_OFFSET,           sizeof(unsigned long));
   eeprom_read_block(&I_0,               (const void*)EEPROM_I_0 + EEPROM_OFFSET,                sizeof(unsigned long));
   targetOD = pow(10, (float)I_0/targetI);
-  
+
   eeprom_read_block(&stirrerRPM,        (const void*)EEPROM_STIRRER_RPM + EEPROM_OFFSET,        sizeof(unsigned long));
   eeprom_read_block(&pumpPulsDuration,  (const void*)EEPROM_PUMP_PULS_DURATION + EEPROM_OFFSET, sizeof(unsigned long));
   eeprom_read_block(&pumpPulsWait,      (const void*)EEPROM_PUMP_PULS_WAIT + EEPROM_OFFSET,     sizeof(unsigned long));
@@ -209,7 +209,7 @@ void eeprom_load(){
   Serial.print("airpumpPower: ");
   Serial.println(airpumpPower);
 
- 
+
   // set default values if eeprom values are "undefined" and save it to eeprom
   // this is propably only done once when eeprom is empty
   if (stirrerRPM > 3000){
@@ -240,18 +240,18 @@ void eeprom_load(){
 //
 // SETUP
 //
-void setup() 
+void setup()
 {
   Serial.begin(115200);
   Serial.println("START");
   Serial.print("version: ");
   Serial.println(TURBIDOSTAT_VERSION);
-  
+
   eeprom_load();
-  
-  pinMode(12, OUTPUT); 
+
+  pinMode(12, OUTPUT);
   analogWrite(12, LOW);
-  
+
   pinMode(SENSOR_A_PIN, INPUT);
   digitalWrite(SENSOR_A_PIN, HIGH);
   attachInterrupt(0, irq1, RISING);
@@ -259,25 +259,25 @@ void setup()
   pinMode(SENSOR_B_PIN, INPUT);
   digitalWrite(SENSOR_B_PIN, HIGH);
   attachInterrupt(1, irq2, RISING);
-  
+
   pinMode(HALLPIN, INPUT);
   digitalWrite(HALLPIN, HIGH);
   // software interrupt for hall sensor
   PCintPort::attachInterrupt(HALLPIN, &irq3, FALLING);  // add more attachInterrupt code as required
-  
-  pinMode(PUMPPIN, OUTPUT); 
+
+  pinMode(PUMPPIN, OUTPUT);
   analogWrite(PUMPPIN, 0);
-  
-  pinMode(AIRPUMPPIN, OUTPUT); 
+
+  pinMode(AIRPUMPPIN, OUTPUT);
   analogWrite(AIRPUMPPIN, airpumpPower);
-  
-  pinMode(STIRRERPIN, OUTPUT); 
+
+  pinMode(STIRRERPIN, OUTPUT);
   analogWrite(STIRRERPIN, stirrerOut);
   #define PWM_DEVISOR 8
   #define TIME_FACTOR (64/PWM_DEVISOR)
-  setPwmFrequency(STIRRERPIN, PWM_DEVISOR);  
+  setPwmFrequency(STIRRERPIN, PWM_DEVISOR);
   setPwmFrequency(AIRPUMPPIN, PWM_DEVISOR);
-  
+
   Timer2init();
 
 
@@ -290,84 +290,84 @@ void setup()
 //
 // MAIN LOOP
 //
-void loop() 
+void loop()
 {
   if (Serial.available() > 0) {
     // get incoming byte:
     serialBuffer[bufferEnd] = Serial.read();
     Serial.print(serialBuffer[bufferEnd]);
-    
+
     // min message length? -> process commands
     if( serialBuffer[bufferEnd] == 10 ) {
-      processSerialBuffer();  
-      
-      // go to message end 
-      bufferPos = bufferEnd+1; 
+      processSerialBuffer();
+
+      // go to message end
+      bufferPos = bufferEnd+1;
     }
-    
+
     if( bufferEnd < SERIAL_BUFFER_LEN - 1 )
       bufferEnd++;
     else
-      bufferEnd = 0;                        
+      bufferEnd = 0;
   }
-  
+
   if (msecs % 1000 == 0){
     // light sensors
     unsigned long na = cnta - oldcnta;
     unsigned long nb = cntb - oldcntb;
     oldcnta = cnta;
-    oldcntb = cntb;    
+    oldcntb = cntb;
     Ia = na*10;
     Ib = nb*10;
     I=Ia*1000/Ib;
     OD = -(log10(I)-log10(I_0));
-    
-    
+
+
     // print serial output
-    Serial.print("\tt="); 
-    Serial.print(msecs);   
+    Serial.print("\tt=");
+    Serial.print(msecs);
     Serial.print("\tI=");
-    Serial.print((float)I); 
+    Serial.print((float)I);
     Serial.print("\tIa=");
-    Serial.print((float)Ia/1000);  
+    Serial.print((float)Ia/1000);
     Serial.print("\tIb=");
-    Serial.print((float)Ib/1000); 
+    Serial.print((float)Ib/1000);
     Serial.print("\tOD=");
-    Serial.print(OD);  
+    Serial.print(OD);
     Serial.print("\tlog10(I)=");
     Serial.print(log10(I));
     Serial.print("\tlog10(I_0)=");
     Serial.print(log10(I_0));
-    Serial.print("\tf_stirrer="); 
-    Serial.print((stirrerIntCnt*60));  
-    Serial.print("\ttemp="); 
-    Serial.print(getArduinoTemp(),2);     
+    Serial.print("\tf_stirrer=");
+    Serial.print((stirrerIntCnt*60));
+    Serial.print("\ttemp=");
+    Serial.print(getArduinoTemp(),2);
     Serial.println("");
-    
+
     ////////////////////////
-    // control 
+    // control
     ////////////////////////
     // stirrer
     if(stirrerIntCnt*60 < stirrerRPM){
-      stirrerOut += 1;      
+      stirrerOut += 1;
     }
     else{
       stirrerOut -= 1;
     }
     analogWrite(STIRRERPIN, stirrerOut);
-    
-    
+
+
     stirrerIntCnt = 0;
-    
+
   }
-  
+
   // Pump
   if((targetI != 0) && (pumpMode == 0)){
     static unsigned long lastPulsTime = 0;
     static boolean pumppin = false;
-    
+
     // hello future me, please comment and find meaningful names
-    if( targetI > I ){        
+    if( targetI > I ){
       if((pumppin == false) && (lastPulsTime + pumpPulsWait < msecs)){
         thresholdCnt++;
         if(thresholdCnt >= NTIMESTHRESHOLD){
@@ -376,18 +376,18 @@ void loop()
           pumppin = true;
           lastPulsTime = msecs;
           Serial.println("Pump On");
-        }        
+        }
       }
-    } 
+    }
     else{
       thresholdCnt = 0;
     }
     if( (pumppin == true) && (lastPulsTime + pumpPulsDuration < msecs)){
-      
+
       analogWrite(PUMPPIN, 0);
       pumppin = false;
       Serial.println("Pump Off");
-    }    
+    }
   }
 }
 
@@ -398,7 +398,7 @@ void processSerialBuffer(){
       if( toupper(serialBuffer[bufferPos+2]) == 'P'){
         // SAP - Set Airpump Power
         bufferPos += 3;
-        airpumpPower = getSerialIntArgument();        
+        airpumpPower = getSerialIntArgument();
         eeprom_write_block(&airpumpPower,     (void*)EEPROM_AIRPUMP_POWER + EEPROM_OFFSET,       sizeof(unsigned long));
         analogWrite(AIRPUMPPIN, airpumpPower);
         Serial.print("airpumpPower: ");
@@ -442,12 +442,12 @@ void processSerialBuffer(){
         Serial.println(targetI);
       }
     }
-    if( toupper(serialBuffer[bufferPos+1]) == 'P'){      
+    if( toupper(serialBuffer[bufferPos+1]) == 'P'){
       if( toupper(serialBuffer[bufferPos+2]) == 'D'){
         // SPD - Set Pump puls Duration
         bufferPos += 3;
         pumpPulsDuration = getSerialIntArgument();
-        eeprom_write_block(&pumpPulsDuration,     (void*)EEPROM_PUMP_PULS_DURATION + EEPROM_OFFSET,       sizeof(unsigned long));        
+        eeprom_write_block(&pumpPulsDuration,     (void*)EEPROM_PUMP_PULS_DURATION + EEPROM_OFFSET,       sizeof(unsigned long));
         Serial.print("pumpPulsDuration: ");
         Serial.println(pumpPulsDuration);
       }
@@ -455,7 +455,7 @@ void processSerialBuffer(){
         // SPM - Set Pump Mode
         bufferPos += 3;
         pumpMode = getSerialIntArgument();
-        eeprom_write_block(&pumpMode,     (void*)EEPROM_PUMP_MODE + EEPROM_OFFSET,       sizeof(unsigned long));        
+        eeprom_write_block(&pumpMode,     (void*)EEPROM_PUMP_MODE + EEPROM_OFFSET,       sizeof(unsigned long));
         Serial.print("pumpMode: ");
         Serial.println(pumpMode);
       }
@@ -475,23 +475,23 @@ void processSerialBuffer(){
         Serial.print("pumpPulsWait: ");
         Serial.println(pumpPulsWait);
       }
-    }  
-    if( toupper(serialBuffer[bufferPos+1]) == 'S'){      
+    }
+    if( toupper(serialBuffer[bufferPos+1]) == 'S'){
       if( toupper(serialBuffer[bufferPos+2]) == 'S'){
-        // SFF - Set Stirrer Speed
+        // SSS - Set Stirrer Speed
         bufferPos += 3;
         stirrerRPM = getSerialIntArgument();
         eeprom_write_block(&stirrerRPM,     (void*)EEPROM_STIRRER_RPM + EEPROM_OFFSET,       sizeof(unsigned long));
       }
-    } 
-    if( toupper(serialBuffer[bufferPos+1]) == 'T'){      
+    }
+    if( toupper(serialBuffer[bufferPos+1]) == 'T'){
         // ST - Set Time
         bufferPos += 2;
         unsigned long new_msecs = getSerialIntArgument();
         msecs = new_msecs;
         Serial.print("_st: ");
         Serial.println(msecs);
-    }  
+    }
   }
 }
 
@@ -557,7 +557,7 @@ double getArduinoTemp(){
   #define TEMP_OFFSET (7)
   #define AD2VOLTS          (1.1/1023.0) //1.1v=1023
   #define VOLTS2DEGCELSIUS  (25.0/0.314)
-  
+
   // The returned temperature is in degrees Celcius.
   return ADCW * AD2VOLTS * VOLTS2DEGCELSIUS - TEMP_OFFSET;
 }

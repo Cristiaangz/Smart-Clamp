@@ -1,0 +1,13 @@
+(sym_lib_table
+  (lib (name arduino_shieldsNCL)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/arduino_shieldsNCL.lib)(options "")(descr ""))
+  (lib (name dp_devices)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/dp_devices.lib)(options "")(descr ""))
+  (lib (name ir2153)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/ir2153.lib)(options "")(descr ""))
+  (lib (name irf7103)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/irf7103.lib)(options "")(descr ""))
+  (lib (name lm2596)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/lm2596.lib)(options "")(descr ""))
+  (lib (name lm2621)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/lm2621.lib)(options "")(descr ""))
+  (lib (name mbi6651)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/mbi6651.lib)(options "")(descr ""))
+  (lib (name MC34063)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/MC34063.lib)(options "")(descr ""))
+  (lib (name ncp1450)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/ncp1450.lib)(options "")(descr ""))
+  (lib (name tl494)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/tl494.lib)(options "")(descr ""))
+  (lib (name ref-packages)(type Legacy)(uri ${KIPRJMOD}/kicad-components/lib/ref-packages.lib)(options "")(descr ""))
+)

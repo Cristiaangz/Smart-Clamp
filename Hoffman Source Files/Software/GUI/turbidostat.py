@@ -12,7 +12,7 @@ import os
 import ConfigParser
 import datetime
 import string
-from pylab import * 
+from pylab import *
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 from matplotlib.backends.backend_wx import NavigationToolbar2Wx
 from scipy.stats import linregress
@@ -51,7 +51,7 @@ def ekf(fstate, x, P, hmeas, z, Q, R, I0=None):
 
     A = matrix(A)
     P = matrix(P)
-    
+
     P = A*P*A.T + Q              # partial update
     # z1, H = jaccsd(hmeas, x1)    # nonlinear measurement and linearization
     z1 = hmeas(x1)
@@ -64,14 +64,14 @@ def ekf(fstate, x, P, hmeas, z, Q, R, I0=None):
     x = x1+K*(z-z1)              # state estimate
     P = P-K*(P12.T)              # state covariance matrix
 
-    return x, P, K 
+    return x, P, K
 
 
 class TurbidostatGUI(wxturbidostat.TsFrame):
     def __init__(self, parent):
 
         #self.m_notebook.InvalidateBestSize()
-        # import ipdb; ipdb.set_trace() 
+        # import ipdb; ipdb.set_trace()
 
         wxturbidostat.TsFrame.__init__( self, parent )
 
@@ -104,14 +104,14 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
         # find serial ports
         self.data_source =  None
-        serialport_list = serial.tools.list_ports.comports()        
-        if os.name == 'posix':    
-            serialports = [ row[0] for row in serialport_list if 'USB' in row[0]]   
+        serialport_list = serial.tools.list_ports.comports()
+        if os.name == 'posix':
+            serialports = [ row[0] for row in serialport_list if 'USB' in row[0]]
             if len(serialports) > 0:
                 self.m_tcPort.SetValue(serialports[0])
         elif os.name == 'nt':
             serialports = [ row[0] for row in serialport_list if 'COM' in row[0]]
-            if len(serialports) > 0:   
+            if len(serialports) > 0:
                 self.m_tcPort.SetValue(serialports[0])
 
         # # check for product string
@@ -122,7 +122,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
 
         # Set Icons
-        icons = wx.IconBundle() 
+        icons = wx.IconBundle()
         favicon = wx.Icon('./res/turbidostat.ico', wx.BITMAP_TYPE_ICO, 16, 16)
         icons.AddIcon(favicon)
         favicon = wx.Icon('./res/turbidostat.ico', wx.BITMAP_TYPE_ICO, 32, 32)
@@ -130,7 +130,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
         self.SetIcons(icons)
 
         # load configuration from config file
-        configParser = ConfigParser.RawConfigParser()   
+        configParser = ConfigParser.RawConfigParser()
         configFilePath = homeFolder + '/Turbidostat/turbidostat.cfg'
         configParser.read(configFilePath)
         self.OD1cm_factor = configParser.getfloat('MEASUREMENT', 'OD_1cm_factor')
@@ -149,8 +149,8 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
         # ---- Kalman ----
         # Zustandsmodell exponentielles Wachstum
-        self.f = lambda(x): matrix( [x[0, 0]*x[1, 0], x[1, 0]] ).T
-         
+        self.f = lambda(x): matrix( [x[0, 0]*x[1, 0], x[1, 0]] )
+
         # Measurement
         self.h = lambda(x): matrix( self.I0/(10**x[0,0]) )
 
@@ -173,10 +173,10 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
         self.toolbar.DeleteToolByPos(1)
         self.toolbar.DeleteToolByPos(0)
         self.toolbar.DeleteToolByPos(0)
-  
+
         # add
         resettool = self.toolbar.AddLabelTool(id = wx.ID_ANY, label='reset', bitmap=wx.Bitmap('./res/reset.png'))
-        self.toolbar.Realize()       
+        self.toolbar.Realize()
         self.Bind(wx.EVT_TOOL, self.OnKalmanReset, resettool)
 
         self.toolbar.SetBackgroundColour( array(self.m_pnlGraphs.GetBackgroundColour()[0:3]) )
@@ -194,40 +194,40 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
         hold(True)
         self.ax.append( plot(r_[1:2], 'c', r_[2:3], 'b', r_[4:5], 'r--', r_[4:5], 'r--') )
         # show()
-       
+
     def connect(self, data_source):
         try:
-            # workaround for reconnect bug in linux 
+            # workaround for reconnect bug in linux
             self.ser = serial.Serial(data_source, 9600, timeout=0)
             self.dummy_mode = False
         except:
             self.ser = None
             try:
-                # open prerecorded file 
+                # open prerecorded file
                 self.dummy_file = open(data_source)
                 self.dummy_mode = True
             except:
                 self.dummy_mode = False
 
         # connect to serial device
-        if self.ser:        
-            # first close lower speed serial connection (linux workaround)        
+        if self.ser:
+            # first close lower speed serial connection (linux workaround)
             self.ser.close()
 
-            # now connect with correct speed 
+            # now connect with correct speed
             self.ser = serial.Serial(data_source, 115200, timeout=0)
             self.ser.flush()
 
         if self.ser or self.dummy_mode:
-            self.connected = True        
+            self.connected = True
             self.connecting = False
             self.done = False
 
-            logFilePath = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.txt'                
-            self.logfile = open(logFilePath, 'w+') 
-            
-            logFilePath_csv = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.csv'                
-            self.logfile_csv = open(logFilePath_csv, 'w+') 
+            logFilePath = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.txt'
+            self.logfile = open(logFilePath, 'w+')
+
+            logFilePath_csv = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.csv'
+            self.logfile_csv = open(logFilePath_csv, 'w+')
             thread.start_new_thread(self.SerialThread, ())
 
 
@@ -242,7 +242,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
     def openSerialSession(self):
         self.connect( self.data_source )
         self.LogToCSVFile('#time [s]\tIntensity\tOD measured\tOD estimate\tOD estimate uncertainty\tdoubling rate [db/hr]\tdoubling rate uncertainty [db/hr]\tstirrer speed [rpm]\ttemperature [degree C])\n')
-        
+
         self.pump = False
         self.n_pump_distrust = 10
         self.invalid_samples_left = self.n_pump_distrust
@@ -263,7 +263,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
             if self.ser:
                 for widget in self.m_widgetGroup:
-                    widget.Enable()                
+                    widget.Enable()
                 self.OnSelectPumpMode(event) # disable unselected pump mode widgets
                 print 'connection successful\n'
 
@@ -279,13 +279,13 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
                 self.m_tcPort.Disable()
 
         else:
-            self.closeSerialSession()     
+            self.closeSerialSession()
             self.m_btnConnect.SetLabel('connect')
             self.m_bitmConnected.SetBitmap(wx.Bitmap('./res/disconnected.png'))
             self.m_tcPort.Enable()
             for widget in self.m_widgetGroup:
                 widget.Disable()
-            print 'disconnection successful\n'       
+            print 'disconnection successful\n'
 
     def setTime( self, time ):
         cmd = 'ST ' + str(int(time)) + chr(10)
@@ -343,7 +343,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
         print cmd
         self.ser.write(cmd.encode())
 
-    def OnSelectPumpMode(self, event):        
+    def OnSelectPumpMode(self, event):
         if self.m_rbPumpMode.GetSelection() == 0: # automatic
             self.m_tbManualPump.SetValue(False)
             self.OnManualPump(event)
@@ -368,11 +368,11 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
         else:
             self.m_tbManualPump.SetLabel('off')
             cmd = 'SMP ' + '0' + chr(10)
-        
+
         print cmd
         self.ser.write(cmd.encode())
 
-    def OnClose(self, event):        
+    def OnClose(self, event):
         self.done = True
         print 'done: ' + str(self.done)
         # dlg = wx.MessageDialog(self,
@@ -381,7 +381,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
         # result = dlg.ShowModal()
         # dlg.Destroy()
         # if result == wx.ID_OK:
-        self.Destroy()      
+        self.Destroy()
 
 
     def LogToFile(self, f, s):
@@ -389,7 +389,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
         try:
             f.flush()
-        # ignore and flush later ('magically' locked file, e.g. by excel import) 
+        # ignore and flush later ('magically' locked file, e.g. by excel import)
         except IOError, e:
             if e.errno != 13:
                 debug_log.write(str(e.errno) + '\n')
@@ -399,7 +399,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
     def LogToCSVFile(self, s):
         self.LogToFile( self.logfile_csv, s)
-        
+
 
     def OnKalmanReset(self, event):
         # covariance of process
@@ -411,7 +411,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
         self.P_OD = self.R/((self.I0*log(10))**2)
 
 
-         
+
         # Initialisierung
         self.I = nan
         self.x = matrix( [log10(self.I0/self.I0), 1.0000 ]).T          # initial state
@@ -420,21 +420,21 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
         self.thread_lock.acquire()
         self.invalid_samples_left = 0
-                       
-        # self.time_list               = self.time_list[-1]        
-        # self.measurement_list        = self.measurement_list[-1]       
-        # self.state_list              = self.state_list[-1]             
-        # self.dbrate_list             = self.dbrate_list[-1]            
+
+        # self.time_list               = self.time_list[-1]
+        # self.measurement_list        = self.measurement_list[-1]
+        # self.state_list              = self.state_list[-1]
+        # self.dbrate_list             = self.dbrate_list[-1]
         # self.dbrate_uncertainty_list = self.dbrate_uncertainty_list[-1]
-        # self.uncertainty_list        = self.uncertainty_list[-1]       
+        # self.uncertainty_list        = self.uncertainty_list[-1]
         self.time_list               = []
         self.measurement_list        = []
         self.state_list              = []
         self.dbrate_list             = []
         self.dbrate_uncertainty_list = []
         self.uncertainty_list        = []
-        
-        self.thread_lock.release() 
+
+        self.thread_lock.release()
 
     def plot(self):
         if self.dummy_mode == False or (self.dummy_mode and (self.time % 0.5 == 0)):
@@ -447,11 +447,11 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
             self.ax[0][2].set_xdata( self.time_list)
             self.ax[0][2].set_ydata( r_[self.dbrate_list] + r_[self.dbrate_uncertainty_list])
             xlim( 0, self.time_list[-1])
-            # ylim( min(r_[self.dbrate_list] - r_[self.dbrate_uncertainty_list]), 
+            # ylim( min(r_[self.dbrate_list] - r_[self.dbrate_uncertainty_list]),
             #                    max(r_[self.dbrate_list] + r_[self.dbrate_uncertainty_list]))
             ylim( min(r_[self.dbrate_list]), max(r_[self.dbrate_list] + r_[self.dbrate_uncertainty_list]))
             ylabel( 'rate [doublings/hr]')
-            
+
             subplot(212)
             self.ax[1][0].set_xdata( self.time_list )
             self.ax[1][0].set_ydata( self.measurement_list )
@@ -470,7 +470,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
             self.thread_lock.release()
 
             if (self.OD < -110):
-                self.OD = 'n/A(-)' 
+                self.OD = 'n/A(-)'
                 OD_1cm = 'n/A(-)'
             else:
                 OD_1cm = self.OD*self.OD1cm_factor
@@ -519,9 +519,9 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
                         self.pump = False
 
 
-                    for (var, value) in re.findall(r'([^=\t ]*)=([-0-9\.]+)', response):    
+                    for (var, value) in re.findall(r'([^=\t ]*)=([-0-9\.]+)', response):
                         if var == 't':
-                            self.time = float(value)/(60*1000) 
+                            self.time = float(value)/(60*1000)
 
                         if var == 'temp':
                             temperature = float(value)
@@ -532,7 +532,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
                             if not isnan(self.I0) and self.I != 0:
                                 self.OD = log10(self.I0/self.I)
                                 new_sample_available = True
-                                    
+
                         if var == 'f_stirrer':
                             self.stirrer_speed = float(value)
                             wx.CallAfter(self.m_txtStirrerSpeed.SetLabel, value)
@@ -564,13 +564,13 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
                             self.P[1, 0] = 0
                             self.P[0, 1] = 0
                             self.P[0, 0] = (self.x[0, 0]-log10(self.I0/self.I))**2
-                        
+
                         x             = self.x[0, 0]
                         geom_rate     = self.x[1, 0]
                         db_rate       = 3600 * log(geom_rate)/log(2)
                         var_x         = self.P[0, 0]
                         var_geom_rate = self.P[1, 1]
-                        std_db_rate   = 3600*sqrt(var_geom_rate) / (log(2)*geom_rate) 
+                        std_db_rate   = 3600*sqrt(var_geom_rate) / (log(2)*geom_rate)
                         self.uncertainty_list.append( var_x )
                         self.state_list.append(x)
                         self.dbrate_list.append(db_rate)
@@ -578,7 +578,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
                         self.thread_lock.release()
 
                         wx.CallAfter(self.plot)
-                            
+
                         logstring = '%.0f\t%.0f\t%f\t%f\t%f\t%f\t%f\t%.1f\t%.2f\n' % (self.time*60, self.I , self.OD, x, sqrt(var_x), db_rate, std_db_rate, self.stirrer_speed, temperature)
                         self.LogToCSVFile(logstring)
                         new_sample_available = False
@@ -595,7 +595,7 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
                 self.disconnect()
                 sleep(1)
                 self.connect(self.data_source)
-                
+
 
         print 'self.threads', self.threads
         self.threads -= 1
@@ -606,13 +606,13 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
     def __del__(self):
         print 'done2: ' + str(self.done)
         # while self.threads > 0:
-        #     pass 
+        #     pass
         if self.connected:
             self.ser.close()
 
 def main():
     ex = wx.App()
-    TurbidostatGUI(None)    
+    TurbidostatGUI(None)
     ex.MainLoop()
 
 if __name__ == '__main__':
