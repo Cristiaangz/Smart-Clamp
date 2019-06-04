@@ -11,7 +11,7 @@
 //////////////////////////////
 
 
-#define SMARTCLAMP_VERSION  "0.01"
+#define SMARTCLAMP_VERSION  "0.02"
 
 #define PINMODE
 #define FLASH
@@ -37,7 +37,7 @@ volatile unsigned long cnta = 0;
 unsigned long oldcnta = 0;
 unsigned long t = 0;
 
-#define SERIAL_BUFFER_LEN 128
+#define SERIAL_BUFFER_LEN 128 // Defines Arduino buffer as 128 bytes instead of 64
 char serialBuffer[SERIAL_BUFFER_LEN];
 unsigned short bufferEnd = 0;
 unsigned short bufferPos = 0;
@@ -49,7 +49,9 @@ unsigned long I = 0;         // current intensity in uW/m2
 unsigned long targetI = 0;   // target intensity in uW/m2
 unsigned long I_0 = 0;       // zero intensity in uW/m2
 
+// Modes
 bool laserOn = false;
+bool readSensor = false;
 
 
 
@@ -201,11 +203,13 @@ void loop() {
     oldcnta = cnta;
     Ia = na*10;
     
-    Serial.print("\tIa (microW/m^2)=");
+    Serial.print("\ttime=");
+    Serial.print((int)msecs);
+    Serial.print("\tIa=");
     Serial.print((float)Ia/1000);
     Serial.print("\ttemp=");
     Serial.print(getArduinoTemp(),2);
-    Serial.print("\tLaser ON = ");
+    Serial.print("\tLaserON=");
     Serial.print(laserOn);
     Serial.println("");
 
