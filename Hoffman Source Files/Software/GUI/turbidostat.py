@@ -520,6 +520,8 @@ class TurbidostatGUI(wxturbidostat.TsFrame):
 
 
                     for (var, value) in re.findall(r'([^=\t ]*)=([-0-9\.]+)', response):
+
+
                         if var == 't':
                             self.time = float(value)/(60*1000)
 

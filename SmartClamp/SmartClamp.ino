@@ -22,17 +22,6 @@
 #define SENSOR_A_PIN  2
 #define LASER_PIN   4
 
-// PROM Allocation: Consider removing those not used.
-//#define EEPROM_OFFSET 0
-//#define EEPROM_TARGET_I                (0*sizeof(unsigned long))
-//#define EEPROM_I_0                     (1*sizeof(unsigned long))
-//#define EEPROM_PUMP_MODE               (2*sizeof(unsigned long))
-//#define EEPROM_PUMP_POWER              (3*sizeof(unsigned long))
-//#define EEPROM_AIRPUMP_POWER           (4*sizeof(unsigned long))
-//#define EEPROM_PUMP_PULS_DURATION      (5*sizeof(unsigned long))
-//#define EEPROM_PUMP_PULS_WAIT          (6*sizeof(unsigned long))
-//#define EEPROM_STIRRER_RPM             (7*sizeof(unsigned long))
-
 volatile unsigned long cnta = 0;
 unsigned long oldcnta = 0;
 unsigned long t = 0;
@@ -127,6 +116,7 @@ void Timer2init() {
 
 
 extern volatile unsigned long msecs = 0;
+extern volatile unsigned long refTime = 0;
 
 /*** FUNC
 Name:       Timer2 ISR
@@ -145,6 +135,29 @@ ISR(TIMER2_OVF_vect) {
   TIFR2 = 0x00;                   // clear timer overflow flag
 };
 
+
+double getArduinoTemp(){
+  // The internal temperature has to be used
+  // with the internal reference of 1.1V.
+  // Channel 8 can not be selected with
+  // the analogRead function yet.
+
+  // Set the internal reference and mux.
+  ADMUX = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
+  ADCSRA |= _BV(ADEN);  // enable the ADC
+
+  ADCSRA |= _BV(ADSC);  // Start the ADC
+
+  // Detect end-of-conversion
+  while (bit_is_set(ADCSRA,ADSC));
+
+  #define TEMP_OFFSET (7)
+  #define AD2VOLTS          (1.1/1023.0) //1.1v=1023
+  #define VOLTS2DEGCELSIUS  (25.0/0.314)
+
+  // The returned temperature is in degrees Celcius.
+  return ADCW * AD2VOLTS * VOLTS2DEGCELSIUS - TEMP_OFFSET;
+}
 
 
 ///////////////////////////////////////////////////////////////////
@@ -196,7 +209,10 @@ void loop() {
 
   
   // Operations taken every second
-  if (msecs % 1000 == 0){
+  if (msecs % 1000 == 0 and msecs > 0){
+
+    msecs = 0;
+    refTime++;
     
     // light sensors
     unsigned long na = cnta - oldcnta;
@@ -204,7 +220,7 @@ void loop() {
     Ia = na*10;
     
     Serial.print("\ttime=");
-    Serial.print((int)msecs);
+    Serial.print((int)refTime);
     Serial.print("\tIa=");
     Serial.print((float)Ia/1000);
     Serial.print("\ttemp=");
@@ -244,28 +260,4 @@ void processSerialBuffer(){
       }
     }
   }
-}
-
-//////////////////////////////////////////////////////////////////////
-double getArduinoTemp(){
-  // The internal temperature has to be used
-  // with the internal reference of 1.1V.
-  // Channel 8 can not be selected with
-  // the analogRead function yet.
-
-  // Set the internal reference and mux.
-  ADMUX = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
-  ADCSRA |= _BV(ADEN);  // enable the ADC
-
-  ADCSRA |= _BV(ADSC);  // Start the ADC
-
-  // Detect end-of-conversion
-  while (bit_is_set(ADCSRA,ADSC));
-
-  #define TEMP_OFFSET (7)
-  #define AD2VOLTS          (1.1/1023.0) //1.1v=1023
-  #define VOLTS2DEGCELSIUS  (25.0/0.314)
-
-  // The returned temperature is in degrees Celcius.
-  return ADCW * AD2VOLTS * VOLTS2DEGCELSIUS - TEMP_OFFSET;
 }

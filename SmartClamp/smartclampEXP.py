@@ -31,13 +31,6 @@ SCVERSION = 0.03
 print("\n\nSTART")
 print("SMARTCLAMP.PY VERSION: ",SCVERSION)
 
-CMDlist = [
-"Connect: connect to Smart Clamp",
-"Disconnect: Disconnect from Smart Clamp",
-"LON: Turn on Laser / LED",
-"LOF: Turn off Laser / LED",
-"Quit: Close Program" ]
-
 logging.basicConfig(level=logging.DEBUG,
                     format='(%(threadName)-9s) %(message)s',)
 
@@ -48,10 +41,6 @@ if not os.path.exists(logFileFolder):
 debug_log = open(logFileFolder + 'debug.log', 'w+')
 
 print("Log Folder: ", logFileFolder, "\n")
-
-print("\nLIST OF COMMANDS:")
-for cmd in CMDlist:
-    print(cmd)
 
 
 ##################################################
