@@ -27,7 +27,7 @@ unsigned long oldcnta = 0;
 unsigned long t = 0;
 
 #define SERIAL_BUFFER_LEN 128 // Defines Arduino buffer as 128 bytes instead of 64
-char serialBuffer[SERIAL_BUFFER_LEN];
+char serialBuffer[SERIAL_BUFFER_LEN];i
 unsigned short bufferEnd = 0;
 unsigned short bufferPos = 0;
 

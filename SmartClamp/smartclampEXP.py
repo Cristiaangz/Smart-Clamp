@@ -65,7 +65,17 @@ class SmartClamp:
         self.LaserON = False
         self.time = 0               ## Time since started collecting data
         self.refTime = 0            ## Time given by Arduino
-        self.verbose = False        ## Prints the readings
+        self.verbose = True        ## Prints the readings
+
+        #Variables for Gyro
+        self.AcX = 0
+        self.AcY = 0
+        self.AcZ = 0
+        self.Gtemp = 0
+        self.GyX = 0
+        self.GyY = 0
+        self.GyZ = 0
+
 
 
     def findSerialPorts(self):
@@ -158,12 +168,12 @@ class SmartClamp:
         new_sample_available = False
         self.new_sample_available = False
 
-        self.LogToCSVFile('#time [s]\tIntensity\ttemperature [degree C])\tLaser On\n')
-        self.LogToTxtFile('#time [s]\tIntensity\ttemperature [degree C])\tLaser On\n')
+        self.LogToCSVFile('Time [s]\tIntensity A\tArduino Temp [C])\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tGyro Temp [C]\n')
+        self.LogToTxtFile('Time [s]\tIntensity A\tArduino Temp [C])\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tGyro Temp [C]\n')
 
         if self.verbose:
             print('Start Time:', datetime.datetime.now().strftime('%H:%M:%S'), "\n")
-            print('Time\t\tIa\tTemp\tLON\n')
+            print('Time\t\tIa\tTemp\tLON\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tGtemp\n')
 
         self.lock.release()
 
@@ -195,16 +205,42 @@ class SmartClamp:
                                 self.time = self.time + 1
                                 self.refTime = long(value)
 
-                        if var == 'Ia':
+                        elif var == 'Ia':
                             self.Ia = float(value)
 
-                        if var == 'temp':
+                        elif var == 'temp':
                             self.temp = float(value)
 
-                        if var == 'LaserON':
+                        elif var == 'LaserON':
                             self.LaserON = float(value)
+
+                        # Check if gyro values
+
+                        elif var == 'AcX':
+                            self.AcX = float(value)
+
+                        elif var == 'AcY':
+                            self.AcY = float(value)
+
+                        elif var == 'AcZ':
+                            self.AcZ = float(value)
+
+                        elif var == 'GyX':
+                            self.GyX = float(value)
+
+                        elif var == 'GyY':
+                            self.GyY = float(value)
+
+                        elif var == 'GyZ':
+                            self.GyZ = float(value)
+
+                        elif var == 'Gtemp':
+                            self.Gtemp = float(value)
+
+                            
                 if self.new_sample_available:
-                    logstring = '%s\t%.2f\t%.0f\t%.0f\n' % (self.time, self.Ia, self.temp, self.LaserON)
+                    logstring = '%s\t%.2f\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\t%.0f\n' % (self.time, self.Ia, self.temp, self.LaserON, self.AcX, self.AcY, self.AcZ, self.GyX, self.GyY, self.GyZ, self.Gtemp)
+
                     if self.verbose:
                         print (datetime.datetime.now().strftime('%H:%M:%S'), logstring, sep=" | ")
                     self.LogToCSVFile(logstring)
