@@ -52,10 +52,10 @@ void setup(){
 }
 void loop(){
 
-  if (msecs % 10 == 0 and msecs > 0){
+  if (msecs % 100 == 0 and msecs > 0){
 
     msecs = 0;
-    refTime = refTime + 0.01;
+    refTime = refTime + 0.1;
     
     Wire.beginTransmission(MPU_addr);
     Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)

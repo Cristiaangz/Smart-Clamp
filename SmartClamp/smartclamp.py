@@ -7,7 +7,7 @@
 
 ##################################################
 ##
-##  LIBRARIES AND Initialization
+##  LIBRARIES AND Initializationi
 ##
 ##########################
 
@@ -36,6 +36,8 @@ CMDlist = [
 "Disconnect: Disconnect from Smart Clamp",
 "LON: Turn on Laser / LED",
 "LOF: Turn off Laser / LED",
+"SLI: Set Light Intensity",
+"V: Toggle verbose output",
 "Quit: Close Program" ]
 
 logging.basicConfig(level=logging.DEBUG,
@@ -49,7 +51,7 @@ debug_log = open(logFileFolder + 'debug.log', 'w+')
 
 print("Log Folder: ", logFileFolder, "\n")
 
-print("\nLIST OF COMMANDS:")
+print("LIST OF COMMANDS:")
 for cmd in CMDlist:
     print(cmd)
 
@@ -72,11 +74,21 @@ class SmartClamp:
         self.threads = 0            ## Number of other than main thread
         self.lock = threading.Lock()## Threading Lock
         self.Ia = 0                 ## Intensity of Sensor A in uW/m2
-        self.temp = 0               ## Arduino Temperature
+        self.temp_ard = 0               ## Arduino Temperature
         self.LaserON = False
         self.time = 0               ## Time since started collecting data
         self.refTime = 0            ## Time given by Arduino
         self.verbose = False        ## Prints the readings
+
+        #Variables for Gyro
+        self.acc_x = 0
+        self.acc_y = 0
+        self.acc_z = 0
+        self.temp_mpu = 0
+        self.gyro_x = 0
+        self.gyro_y = 0
+        self.gyro_z = 0
+
 
 
     def findSerialPorts(self):
@@ -139,7 +151,7 @@ class SmartClamp:
 
             logFilePath_csv = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.csv'
             self.logfile_csv = open(logFilePath_csv, 'a+')
-            self.thread = threading.Thread(target=self.SerialThread)
+            self.thread = threading.Thread(target=self.SerialThread, name='Serial Stream')
             self.thread.setDaemon(True)
 
     def closeSerialSession(self):
@@ -165,40 +177,51 @@ class SmartClamp:
         self.threads += 1
         #print ('nthreads ', self.threads)
 
+        temp_response = ""
+        response = ""
 
         new_sample_available = False
         self.new_sample_available = False
 
-        self.LogToCSVFile('#time [s]\tIntensity\ttemperature [degree C])\tLaser On\n')
-        self.LogToTxtFile('#time [s]\tIntensity\ttemperature [degree C])\tLaser On\n')
+        self.LogToCSVFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
+        self.LogToTxtFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
 
         if self.verbose:
             print('Start Time:', datetime.datetime.now().strftime('%H:%M:%S'), "\n")
-            print('Time\t\tIa\tTemp\tLON\n')
+            print('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
 
         self.lock.release()
 
         while not self.done:
             if self.connected:
                 try:
-                    response = self.ser.readline()
-                    response = response.decode()
+                    temp_response += self.ser.readline().decode()
+                    if temp_response[-3] == "$":
+                        response = temp_response
+                        temp_response = "";
+                except IndexError:
+                    continue
                 except :
                     print ('except when reading response')
                     self.connected = False
                     self.connecting = True
                     continue
 
-                if len(response) > 1:   # and response[-1] == '\n'
+                if len(response) > 1 and response[-3] == '$':
+                    response = response[:-3] + response[-2:-1]
+                    #print(response)
+                    #print(response[-3])
 
                     if response.find('START') == 0:
                         ## Procedures to do at Start. May be replicated for other comms
+                        print("\nCalibrating")
                         pass
-
 
                     for (var, value) in re.findall(r'([^=\t ]*)=([-0-9\.]+)', response):
                         # find 0 or more (*) strings that start (^) with a tab (\t) and are
                         # followed by one or more (+) numbers from 0-9 ignoring \.
+
+
 
                         if var == 'time':
                             if value != self.refTime:
@@ -206,16 +229,44 @@ class SmartClamp:
                                 self.time = self.time + 1
                                 self.refTime = long(value)
 
-                        if var == 'Ia':
+                        elif var == 'Ia':
                             self.Ia = float(value)
 
-                        if var == 'temp':
-                            self.temp = float(value)
+                        elif var == 'temp_ard':
+                            self.temp_ard = float(value)
 
-                        if var == 'LaserON':
+                        elif var == 'LaserON':
                             self.LaserON = float(value)
+
+                        # Check if gyro values
+
+                        elif var == 'acc_x':
+                            self.acc_x = float(value)
+
+                        elif var == 'acc_y':
+                            self.acc_y = float(value)
+
+                        elif var == 'acc_z':
+                            self.acc_z = float(value)
+
+                        elif var == 'gyro_x':
+                            self.gyro_x = float(value)
+
+                        elif var == 'gyro_y':
+                            self.gyro_y = float(value)
+
+                        elif var == 'gyro_z':
+                            self.gyro_z = float(value)
+
+                        elif var == 'temp_mpu':
+                            self.temp_mpu = float(value)
+
+                    response = ""
+
+
                 if self.new_sample_available:
-                    logstring = '%s\t%.2f\t%.0f\t%.0f\n' % (self.time, self.Ia, self.temp, self.LaserON)
+                    logstring = '{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(self.time, self.Ia, self.LaserON, self.acc_x, self.acc_y, self.acc_z, self.gyro_x, self.gyro_y, self.gyro_z, self.temp_ard, self.temp_mpu)
+
                     if self.verbose:
                         print (datetime.datetime.now().strftime('%H:%M:%S'), logstring, sep=" | ")
                     self.LogToCSVFile(logstring)
@@ -252,9 +303,12 @@ def processInput(input, object=None):
     switcher={
         'CONNECT': connectToSC ,
         'DISCONNECT': disconnectFromSC,
+        'D' : disconnectFromSC,
         'QUIT': quitProg,
         'LON' : LON,
-        'LOF' : LOF
+        'LOF' : LOF,
+        'V' : verbose,
+        'SLI' : setLightIntensity
     }
     #print(switcher)
     func=switcher.get(input, invalidCmd)
@@ -262,7 +316,7 @@ def processInput(input, object=None):
     try:
         return func(object)
     except TypeError:
-        print("There was a TypeError when running, func")
+        print("There was a TypeError when running", func)
         return
 
 def connectToSC(sc):
@@ -289,6 +343,32 @@ def LOF(sc):
     except AttributeError:
         print("Not connected to Smart Clamp (>> connect)")
 
+def verbose(sc):
+    try:
+        sc.verbose = not(sc.verbose)
+        print("verbose is", sc.verbose)
+    except AttributeError:
+        print("Not connected to Smart Clamp (>> connect)")
+
+def setLightIntensity(sc):
+    while True:
+        try:
+            intensity = int(input("Set intensity to [0-128]: "))
+        except ValueError:
+            print("Please enter an integer from 0 to 128")
+            continue
+        try:
+            if (0 <= intensity <= 128):
+                cmd = "SLI "+ str(intensity)+"\n"
+                sc.ser.write(cmd.encode())
+                intensity = -1
+                break
+        except AttributeError:
+            print("Not connected to Smart Clamp (>> connect)")
+            break
+
+
+
 def invalidCmd(sc):
     print("Invalid command for %s ID: %s\n" % (sc.__name__, sc.ID))
 
@@ -298,7 +378,7 @@ def main():
     sc = SmartClamp(1)
 
     while not exit:
-        inp = input(">> ")
+        inp = input("\n>> ")
         processInput(inp.upper(), sc)
 
 if __name__ == '__main__':
