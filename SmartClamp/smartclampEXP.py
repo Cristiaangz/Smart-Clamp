@@ -22,11 +22,12 @@ import configparser
 import datetime
 import string
 from pylab import *
-from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
-from matplotlib.backends.backend_wx import NavigationToolbar2Wx
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib import style
 from scipy.stats import linregress
 
-SCVERSION = 0.03
+SCVERSION = 0.10
 
 print("\n\nSTART")
 print("SMARTCLAMP.PY VERSION: ",SCVERSION)
@@ -73,14 +74,24 @@ class SmartClamp:
         self.ser = None             ## Stores the serial connection
         self.threads = 0            ## Number of other than main thread
         self.lock = threading.Lock()## Threading Lock
-        self.Ia = 0                 ## Intensity of Sensor A in uW/m2
+
+        #Variables for Arduino
         self.temp_ard = 0               ## Arduino Temperature
-        self.LaserON = False
         self.time = 0               ## Time since started collecting data
         self.refTime = 0            ## Time given by Arduino
         self.verbose = False        ## Prints the readings
 
+        #Variables for Light Sensor
+        self.Ia = 0                 ## Intensity of Sensor A in uW/m2
+
+        #Variables for Light Source
+        self.LightOn = False
+        self.potentiometer = 128
+
         #Variables for Gyro
+        self.calibrated = threading.Event()
+        self.calibrated.clear()
+
         self.acc_x = 0
         self.acc_y = 0
         self.acc_z = 0
@@ -88,6 +99,19 @@ class SmartClamp:
         self.gyro_x = 0
         self.gyro_y = 0
         self.gyro_z = 0
+
+        #Variables for plotting
+        self.times = []
+        self.Ias = []
+        self.temp_ards = []
+        self.LONs = []
+        self.acc_xs = []
+        self.acc_ys = []
+        self.acc_zs = []
+        self.temp_mpus = []
+        self.gyro_xs = []
+        self.gyro_ys = []
+        self.gyro_zs = []
 
 
 
@@ -122,8 +146,9 @@ class SmartClamp:
             except:
                 print("Something went wrong when starting the Serial Session")
         if self.ser:
-            print ("\nConnection successful, Thread Starting\n")
-            self.thread.start()
+            print ("\nConnection successful, Threads Starting\n")
+            self.serialThread.start()
+
         else:
             print ("\nConnection unsuccessful\n")
 
@@ -146,13 +171,12 @@ class SmartClamp:
             self.connecting = False
             self.done = False
 
-            logFilePath = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.txt'
-            self.logfile = open(logFilePath, 'a+') # Change to w+ to constantly overwrite
+            self.logFilePath = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.txt'
 
-            logFilePath_csv = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.csv'
-            self.logfile_csv = open(logFilePath_csv, 'a+')
-            self.thread = threading.Thread(target=self.SerialThread, name='Serial Stream')
-            self.thread.setDaemon(True)
+            self.logFilePath_csv = logFileFolder + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.csv'
+            self.logfile_csv = open(self.logFilePath_csv, 'a+')
+            self.serialThread = threading.Thread(target=self.SerialThread, name='Serial Stream')
+            self.serialThread.setDaemon(True)
 
     def closeSerialSession(self):
         self.done = True
@@ -161,7 +185,8 @@ class SmartClamp:
         self.disconnect()
 
     def disconnect(self):
-        self.logfile.close()
+        if self.logfile:
+            self.logfile.close()
         self.logfile_csv.close()
         self.connected = False
         if self.ser:
@@ -177,6 +202,9 @@ class SmartClamp:
         self.threads += 1
         #print ('nthreads ', self.threads)
 
+        self.xs = []
+        self.ys = []
+
         temp_response = ""
         response = ""
 
@@ -184,7 +212,7 @@ class SmartClamp:
         self.new_sample_available = False
 
         self.LogToCSVFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
-        self.LogToTxtFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
+        #self.LogToTxtFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
 
         if self.verbose:
             print('Start Time:', datetime.datetime.now().strftime('%H:%M:%S'), "\n")
@@ -216,6 +244,11 @@ class SmartClamp:
                         ## Procedures to do at Start. May be replicated for other comms
                         print("\nCalibrating")
                         pass
+                    if response.find('CALIBRATION DONE') == 0:
+                        ## Procedures to do at Start. May be replicated for other comms
+                        print("\nCalibration Done")
+                        self.calibrated.set()
+                        pass
 
                     for (var, value) in re.findall(r'([^=\t ]*)=([-0-9\.]+)', response):
                         # find 0 or more (*) strings that start (^) with a tab (\t) and are
@@ -224,7 +257,7 @@ class SmartClamp:
 
 
                         if var == 'time':
-                            if value != self.refTime:
+                            if value != self.time:
                                 self.new_sample_available = True
                                 self.time = self.time + 1
                                 self.refTime = long(value)
@@ -236,7 +269,7 @@ class SmartClamp:
                             self.temp_ard = float(value)
 
                         elif var == 'LaserON':
-                            self.LaserON = float(value)
+                            self.LightOn = float(value)
 
                         # Check if gyro values
 
@@ -265,12 +298,34 @@ class SmartClamp:
 
 
                 if self.new_sample_available:
-                    logstring = '{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(self.time, self.Ia, self.LaserON, self.acc_x, self.acc_y, self.acc_z, self.gyro_x, self.gyro_y, self.gyro_z, self.temp_ard, self.temp_mpu)
+
+                #Update data list
+                    if self.refTime > 0:    ##Ignore first two unstable readings
+                        self.times.append(self.refTime)
+                        self.Ias.append(self.Ia)
+                        self.temp_ards.append(self.temp_ard)
+                        self.LONs.append(self.LightOn)
+                        self.acc_xs.append(self.acc_x)
+                        self.acc_ys.append(self.acc_y)
+                        self.acc_zs.append(self.acc_z)
+                        self.temp_mpus.append(self.temp_mpu)
+                        self.gyro_xs.append(self.gyro_x)
+                        self.gyro_ys.append(self.gyro_y)
+                        self.gyro_zs.append(self.gyro_z)
+
+                    logstring = '{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(self.time, self.Ia, self.LightOn, self.acc_x, self.acc_y, self.acc_z, self.gyro_x, self.gyro_y, self.gyro_z, self.temp_ard, self.temp_mpu)
 
                     if self.verbose:
                         print (datetime.datetime.now().strftime('%H:%M:%S'), logstring, sep=" | ")
+
+
                     self.LogToCSVFile(logstring)
+
+                    self.lock.acquire()
+                    self.logfile = open(self.logFilePath, 'w+')                 # Change to w+ to constantly overwrite
                     self.LogToTxtFile(logstring)
+                    self.logfile.close()
+                    self.lock.release()
                     self.new_sample_available = False
                 #time.sleep(0.5)
 
@@ -292,9 +347,65 @@ class SmartClamp:
     def LogToCSVFile(self, s):
         self.LogToFile( self.logfile_csv, s)
 
+    def plotThread(self):
+        self.fig = plt.figure()
+        self.ax1 = self.fig.add_subplot(1,1,1)
+
+        self.ani = animation.FuncAnimation(self.fig, self.animate, interval=1000)
+
+        #Live Plot Labels
+        plt.xlabel("Time [s]")
+        plt.ylabel("Irradience [W/m^2]")
+        plt.title("Light Sensor Live Plot")
+        plt.legend()
+
+        plt.show()
+
+    def animate(self, label):
+        # graph_data = open(self.logFilePath,'r').read()
+        # lines = graph_data.split('\n')
+        # xs = []
+        # ys = []
+        # for line in lines:
+        #     if len(line) > 1:
+        #         time, Ia, LON, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z, temp_ard, temp_mp = line.split('\t')
+        #         xs.append(float(timte))
+        #         ys.append(float(Ia))
+        self.ax1.clear()
+        self.ax1.plot(self.times, self.Ias, label="irradience")
+
+    def brightTest(self, timeInt=20, numLevels = 8):
+        print("Brightness Test Started")
+        level = 1
+        if self.connected and self.LightOn and self.refTime < timeInt:
+            self.ser.write('LOF\n'.encode())
+            self.LightOn = False
+        print("Test waiting for Calibration to Finish")
+        self.calibrated.wait()
+        print("Test starting")
+        while self.connected:
+            if self.time > ((level * timeInt) - 2):
+                self.ser.write('LON\n'.encode())
+                print('Light Turned On')
+
+                if level > 1:
+                    self.potentiometer -= 1
+                cmd = "SLI "+ str(self.potentiometer)+"\n"
+                self.ser.write(cmd.encode())
+                print("Potentiometer Level: ", self.potentiometer)
+
+                level += 1
+
+                if level == (numLevels + 1):
+                    self.ser.write('LOF\n'.encode())
+                    self.LightOn = False
+                    self.closeSerialSession()
+        print("Test Finished")
+
+
 ##################################################
 ##
-##  Main Loop
+##  Main Loop Functions
 ##
 ##########################
 
@@ -305,10 +416,14 @@ def processInput(input, object=None):
         'DISCONNECT': disconnectFromSC,
         'D' : disconnectFromSC,
         'QUIT': quitProg,
+        'Q': quitProg,
         'LON' : LON,
         'LOF' : LOF,
         'V' : verbose,
-        'SLI' : setLightIntensity
+        'SLI' : setLightIntensity,
+        'PLOT' : plot,
+        'P' : plot,
+        'TEST' : test
     }
     #print(switcher)
     func=switcher.get(input, invalidCmd)
@@ -322,6 +437,24 @@ def processInput(input, object=None):
 def connectToSC(sc):
     sc.findSerialPorts()
     sc.checkConnect()
+
+def test(sc):
+    try:
+        timeInt = int(input("Set Time Interval Between Levels [seconds]: "))
+        numLevels = int(input("Set Number of Levels Testes [Min 2]: "))
+        if not sc.connected:
+            sc.findSerialPorts()
+            sc.checkConnect()
+
+        testThread = threading.Thread(target=sc.brightTest, args=(timeInt, numLevels), name='Brightness Test')
+        testThread.setDaemon(True)
+        if sc.connected:
+            testThread.start()
+            print('Test Thread Started')
+            sc.plotThread()
+    except:
+        print("Something went wrong with Brightness Test")
+
 
 def disconnectFromSC(sc):
     sc.closeSerialSession()
@@ -361,18 +494,25 @@ def setLightIntensity(sc):
             if (0 <= intensity <= 128):
                 cmd = "SLI "+ str(intensity)+"\n"
                 sc.ser.write(cmd.encode())
-                intensity = -1
+                sc.potentiometer = cmd
                 break
         except AttributeError:
             print("Not connected to Smart Clamp (>> connect)")
             break
 
-
+def plot(sc):
+    sc.plotThread()
 
 def invalidCmd(sc):
     print("Invalid command for %s ID: %s\n" % (sc.__name__, sc.ID))
 
 exit = False
+
+##################################################
+##
+##  Main Loop
+##
+##########################
 
 def main():
     sc = SmartClamp(1)

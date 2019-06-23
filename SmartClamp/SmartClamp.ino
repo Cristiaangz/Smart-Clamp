@@ -11,7 +11,7 @@
 //////////////////////////////
 
 
-#define SMARTCLAMP_VERSION  "0.03"
+#define SMARTCLAMP_VERSION  "0.11"
 #include <PinChangeInt.h>                                              // DEPRECATED: Should consider chanaging to EnableInterrupt.h Library when given the time
 #include <Wire.h>                                                      //Enables I2C Comms
 #include <SPI.h>                                                       //Enables SPI Comms
@@ -110,6 +110,7 @@ void setup() {
   attachInterrupt(0, isr1, RISING);                                    //Interrupt function isr1 triggered by rising edge at PIN D2
   Timer2init();
 
+  Serial.println("CALIBRATION DONE$");
 }
 
 
