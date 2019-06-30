@@ -11,10 +11,11 @@
 //////////////////////////////
 
 
-#define SMARTCLAMP_VERSION  "0.11"
+#define SMARTCLAMP_VERSION  "0.12"
 #include <PinChangeInt.h>                                              // DEPRECATED: Should consider chanaging to EnableInterrupt.h Library when given the time
 #include <Wire.h>                                                      //Enables I2C Comms
 #include <SPI.h>                                                       //Enables SPI Comms
+#include <SFE_MicroOLED.h>                                             // Include the SFE_MicroOLED library
 //#include <MPU6050_tockn>                                             //MPU6050 Data processing
 
 
@@ -27,7 +28,7 @@ unsigned short bufferPos = 0;
 // Light Detection
 #define SENSOR_A_PIN  2
 #define LIGHT_PIN     4
-#define POT_PIN       10
+#define CS_SPI       10
 #define POT_ADDR      0x00
 
 volatile unsigned long cnta = 0;
@@ -39,6 +40,13 @@ unsigned long I_0 = 0;                                                 // zero i
 
 byte light_int = 128;                                                  //Changes potentiometer resistance from 10kΩ to 0Ω [0-128]
 
+// OLED Display
+#define PIN_RESET 9                                                    // Connect RST to pin 9
+#define PIN_DC    8                                                    // Connect DC to pin 8
+#define DC_JUMPER 0                                                    // Set to either 0 (SPI, default) or 1 (I2C) based on jumper, matching the value of the DC Jumper
+MicroOLED oled(PIN_RESET, PIN_DC, CS_SPI);                             //SPI declaration
+
+int secs, mins, hours = 0;
 
 // Gyroscope
 #define MPU_ADDR 0x068                                                 // I2C address of the MPU-6050
@@ -68,11 +76,18 @@ unsigned long refTime = -1;
 void setup() {
   //Initialization
   Wire.begin();                                                        //Start I2C as master
-  Serial.begin(115200);                                                //Start Serial Channel
-  Serial.println("START$");                                             //Let PC know program started
+  Serial.begin(9600);                                                  //Start Serial Channel
+  Serial.println("START$");                                            //Let PC know program started
+  oled.begin();                                                        // Initialize the OLED
+  oled.clear(ALL);                                                     // Clear the display's internal memory
+  oled.display();                                                      // Display what's in the buffer (splashscreen)
+  delay(1000);     // Delay 1000 ms
+  oled.clear(PAGE); // Clear the buffer.
+  
   Serial.print("SMARTCLAMP version: ");
   Serial.print(SMARTCLAMP_VERSION);
   Serial.println("$");
+  printTitle((String)"V." + SMARTCLAMP_VERSION ,1);
   
   setup_mpu_6050_registers();                                          //Setup the registers of the MPU-6050 (500dfs / +/-8g) and start the gyro
 
@@ -85,12 +100,14 @@ void setup() {
 
   pinMode(13, OUTPUT);                                                 //Set On Board LED as Output
 
-  pinMode(POT_PIN, OUTPUT);
+  pinMode(CS_SPI, OUTPUT);
 
   // Calibration
 
   digitalWrite(13, HIGH);                                              //Set digital output 13 high to indicate startup
-  
+
+  oled.clear(PAGE);
+  printTitle("Dont\nMove", 0);
   Serial.println("Calibrating gyro$"); 
   
   for (int cal_int = 0; cal_int < 2000 ; cal_int ++){                  //Run this code 2000 times
@@ -110,6 +127,8 @@ void setup() {
   attachInterrupt(0, isr1, RISING);                                    //Interrupt function isr1 triggered by rising edge at PIN D2
   Timer2init();
 
+  oled.clear(PAGE);
+  printTitle("Done", 0);
   Serial.println("CALIBRATION DONE$");
 }
 
@@ -128,14 +147,16 @@ void loop() {
     
     oldmsecs = msecs;
     refTime++;
+    processTime();
 
     write_potentiometer(light_int);
     
     process_light_sensor();
     read_mpu_6050_data();
     process_mpu_6050_data();
-    
+
     write_SERIAL();
+    printStats();
 
     if (lightOn)  {digitalWrite(LIGHT_PIN, HIGH);}
     else  {digitalWrite(LIGHT_PIN, LOW);}
@@ -247,16 +268,16 @@ void process_light_sensor(){
   
   unsigned long na = cnta - oldcnta;
   oldcnta = cnta;
-  Ia = (na/6);                                                         // Intensity given in Watts per sq meter
+  Ia = ((float)na/6);
   
 }
 
 void write_potentiometer(int value)
 {
-digitalWrite(POT_PIN, LOW);
+digitalWrite(CS_SPI, LOW);
 SPI.transfer(POT_ADDR);
 SPI.transfer(value);
-digitalWrite(POT_PIN, HIGH);
+digitalWrite(CS_SPI, HIGH);
 }
 
                                   // MPU 6050 FUNCTIONS
@@ -328,11 +349,12 @@ void isr1()
   cnta++;
 }
 
+
 void Timer2init() {
 
     // Setup Timer2 overflow to fire every 8ms (125Hz)
     //   period [sec] = (1 / f_clock [sec]) * prescale * (255-count)
-    //                  (1/16000000)  * 1024 * (255-130) = .008 sec
+    //                  (1/8000000)  * 64 * (255-130) = .008 sec
 
     TCCR2B = 0x00;                                                      // Disable Timer2 while we set it up
 
@@ -340,7 +362,7 @@ void Timer2init() {
     TIFR2  = 0x00;                                                      // Timer2 INT Flag Reg: Clear Timer Overflow Flag
     TIMSK2 = 0x01;                                                      // Timer2 INT Reg: Timer2 Overflow Interrupt Enable
     TCCR2A = 0x00;                                                      // Timer2 Control Reg A: Wave Gen Mode normal
-    TCCR2B = 0x05;                                                      // Timer2 Control Reg B: Timer Prescaler set to 1024
+    TCCR2B = 0x04;                                                      // Timer2 Control Reg B: Timer Prescaler set to 1024
 }
 
 ISR(TIMER2_OVF_vect) {
@@ -352,11 +374,65 @@ ISR(TIMER2_OVF_vect) {
   TIFR2 = 0x00;                                                         // clear timer overflow flag
 };
 
+                                  // DISPLAY FUNCTIONS
 
+void printTitle(String title, int font)
+{
+  oled.clear(PAGE);
+  int middleX = oled.getLCDWidth() / 2;
+  int middleY = oled.getLCDHeight() / 2;
 
+  oled.clear(PAGE);
+  oled.setFontType(font);
+  // Try to set the cursor in the middle of the screen
+  oled.setCursor(middleX - (oled.getFontWidth() * (title.length() / 2)),
+                 middleY - (oled.getFontHeight() / 2));
+  // Print the title:
+  oled.print(title);
+  oled.display();
+}
+
+void printStats(){
+  oled.clear(PAGE);            // Clear the display
+  oled.setCursor(0, 0);        // Set cursor to top-left
+  oled.setFontType(0);         // Smallest font
+  oled.print("T:");          // Print "T"
+  oled.setFontType(0);         // 7-segment font
+  if (secs >= 10){
+    oled.print((String)mins+":"+secs);        // Print a0 reading
+  }else{
+    oled.print((String)mins+":0"+secs); 
+  }
+  oled.setCursor(0, 16);       // Set cursor to top-middle-left
+  oled.setFontType(0);         // Repeat
+  oled.print("I:");
+  oled.setFontType(0);
+  oled.print(Ia);
+  oled.setCursor(0, 32);
+  oled.setFontType(0);
+  oled.print("LED: "); 
+  oled.setFontType(1);
+  if (lightOn){
+    oled.print("ON");
+  }else{
+    oled.print("OFF");
+  }
+  oled.display();
+  
+  }
                                   // OTHER FUNCTIONS
 
-
+void processTime(){
+  secs++;
+  if (secs >= 60){
+  mins++;
+  secs = 0;
+  if (mins >= 60){
+    mins = 0;
+    hours++;
+    }
+  }
+}
 
 double getArduinoTemp(){
   // The internal temperature has to be used
