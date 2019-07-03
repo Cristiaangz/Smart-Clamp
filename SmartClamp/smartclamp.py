@@ -30,7 +30,7 @@ import logging
 # Supresses matplotlib debug messages
 mpl_logger = logging.getLogger("matplotlib")
 mpl_logger.setLevel(logging.WARNING)
-
+BAUD_RATE = 115200
 SCVERSION = 0.12
 
 print("\n\nSTART")
@@ -182,7 +182,7 @@ class SmartClamp:
             print("\tTrying to connect to ", data_source)
 
         # now connect with correct speed
-        self.ser = serial.Serial(data_source, 9600, timeout=0)
+        self.ser = serial.Serial(data_source, BAUD_RATE, timeout=0)
         self.ser.flush()
 
         if self.ser:
@@ -279,11 +279,11 @@ class SmartClamp:
 
 
 
-                        if var == 'time':
+                        if var == 't':
                             if value != self.time:
                                 self.new_sample_available = True
-                                self.time = self.time + 1
-                                self.refTime = long(value)
+                                self.time = value
+                                # self.refTime = long(value)
 
                         elif var == 'Ia':
                             self.Ia = float(value)

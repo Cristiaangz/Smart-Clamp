@@ -31,7 +31,8 @@ import logging
 mpl_logger = logging.getLogger("matplotlib")
 mpl_logger.setLevel(logging.WARNING)
 
-SCVERSION = 0.11
+SCVERSION = 0.12
+BAUD_RATE = 57600
 
 print("\n\nSTART")
 print("SMARTCLAMP.PY VERSION: ",SCVERSION)
@@ -88,7 +89,7 @@ class SmartClamp:
         self.temp_ard = 0               ## Arduino Temperature
         self.time = -1               ## Time since started collecting data
         self.refTime = 0            ## Time given by Arduino
-        self.verbose = True        ## Prints the readings
+        self.verbose = False        ## Prints the readings
 
         #Variables for Light Sensor
         self.Ia = 0                 ## Intensity of Sensor A in uW/m2
@@ -161,6 +162,8 @@ class SmartClamp:
                 self.startSerialSession()
             except AttributeError:
                 print("\tNo valid USB connections were found")
+            except OSError:
+                print(self.data_source, " is already connected to another program")
             except:
                 print("Something went wrong when starting the Serial Session")
         if self.ser:
@@ -182,7 +185,7 @@ class SmartClamp:
             print("\tTrying to connect to ", data_source)
 
         # now connect with correct speed
-        self.ser = serial.Serial(data_source, 9600, timeout=0)
+        self.ser = serial.Serial(data_source, BAUD_RATE, timeout=0)
         self.ser.flush()
 
         if self.ser:
@@ -237,10 +240,6 @@ class SmartClamp:
         self.LogToCSVFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
         #self.LogToTxtFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
 
-        if self.verbose:
-            print('Start Time:', datetime.datetime.now().strftime('%H:%M:%S'), "\n")
-            print('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
-
         self.lock.release()
 
         while not self.done:
@@ -270,6 +269,9 @@ class SmartClamp:
                     if response.find('CALIBRATION DONE') == 0:
                         ## Procedures to do at Start. May be replicated for other comms
                         print("\nCalibration Done")
+                        if self.verbose:
+                            print('\nStart Time:', datetime.datetime.now().strftime('%H:%M:%S'), "\n")
+                            print('Time [s]\tIntensity\tLight\tAx\tAy\tAz\tGx\tGy\tGz\tArd Temp [C])\tMPU Temp [C]\n')
                         self.calibrated.set()
                         pass
 
@@ -279,43 +281,44 @@ class SmartClamp:
 
 
 
-                        if var == 'time':
+                        if var == 't':
                             if value != self.time:
-                                self.new_sample_available = True
-                                self.time = self.time + 1
-                                self.refTime = long(value)
+                                # self.new_sample_available = True
+                                self.time = float(value)
+                                # self.refTime = long(value)
 
-                        elif var == 'Ia':
+                        elif var == 'I':
                             self.Ia = float(value)
 
-                        elif var == 'temp_ard':
+                        elif var == 'ta':
                             self.temp_ard = float(value)
 
-                        elif var == 'LaserON':
-                            self.LightOn = float(value)
+                        elif var == 'l':
+                            self.LightOn = bool(value)
 
                         # Check if gyro values
 
-                        elif var == 'acc_x':
-                            self.acc_x = float(value)
+                        elif var == 'ax':
+                            self.acc_x = float(value)/4096
 
-                        elif var == 'acc_y':
-                            self.acc_y = float(value)
+                        elif var == 'ay':
+                            self.acc_y = float(value)/4096
 
-                        elif var == 'acc_z':
-                            self.acc_z = float(value)
+                        elif var == 'az':
+                            self.acc_z = float(value)/4096
 
-                        elif var == 'gyro_x':
-                            self.gyro_x = float(value)
+                        elif var == 'gx':
+                            self.gyro_x = float(value)/65.5
+                            self.new_sample_available = True
 
-                        elif var == 'gyro_y':
-                            self.gyro_y = float(value)
+                        elif var == 'gy':
+                            self.gyro_y = float(value)/65.5
 
-                        elif var == 'gyro_z':
-                            self.gyro_z = float(value)
+                        elif var == 'gz':
+                            self.gyro_z = float(value)/65.5
 
-                        elif var == 'temp_mpu':
-                            self.temp_mpu = float(value)
+                        elif var == 'tm':
+                            self.temp_mpu = (float(value)+ 12412.0)/340.0
 
                     response = ""
 
@@ -402,7 +405,6 @@ class SmartClamp:
             self.livePlot.event_source.stop()
             # del self.livePlot
             # plt.close()
-            self.testDone.set()
             print("\n\nGraph Saved. Close the graph to start next test.")
 
     def brightTest(self, timeInt=20, numLevels = 8):
@@ -413,7 +415,9 @@ class SmartClamp:
             self.LightOn = False
         self.calibrated.wait()
         while self.connected:
-            if self.time > ((level * timeInt) - 2):
+            print("self.time: ", self.time, "\tself.potentiometer: ", self.potentiometer)
+            if self.time > (level * timeInt):
+                print("self.time: ", self.time)
                 level += 1
                 if level == 2:
                     self.ser.write('LON\n'.encode())
@@ -426,9 +430,10 @@ class SmartClamp:
                 print("Potentiometer Level: ", self.potentiometer)
 
             if level > numLevels and self.time > (numLevels * timeInt) :
-                # self.ser.write('LOF\n'.encode())
-                # self.LightOn = False
+                self.ser.write('LOF\n'.encode())
+                self.LightOn = False
                 self.done = True
+                self.testDone.set()
                 break
 
 

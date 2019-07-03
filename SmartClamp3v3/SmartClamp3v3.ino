@@ -16,54 +16,69 @@
 #include <Wire.h>                                                      //Enables I2C Comms
 #include <SPI.h>                                                       //Enables SPI Comms
 #include <SFE_MicroOLED.h>                                             // Include the SFE_MicroOLED library
-//#include <MPU6050_tockn>                                             //MPU6050 Data processing
+//#include <MPU6050_tockn>                                             //MPU6050 reference library
+
+
 
 
 //Serial Comms
-#define SERIAL_BUFFER_LEN 128                                          // Defines Arduino buffer as 128 bytes instead of 64
+#define SERIAL_BUFFER_LEN 128                                          // Defines Arduino buffer as 128 bytes instead of 64                                                  // Interval of sent data
 char serialBuffer[SERIAL_BUFFER_LEN];
 unsigned short bufferEnd = 0;
 unsigned short bufferPos = 0;
 
+
+
+
 // Light Detection
 #define SENSOR_A_PIN  2
 #define LIGHT_PIN     4
-#define CS_SPI       10
+#define POT_PIN       5
 #define POT_ADDR      0x00
 
+bool lightOn = false;
 volatile unsigned long cnta = 0;
 unsigned long oldcnta = 0;
-//float OD = 0;
 float Ia = 0;                                                          // current intensity of sensor A in uW/m2
-unsigned long I = 0;                                                   // current intensity in uW/m2
-unsigned long I_0 = 0;                                                 // zero intensity in uW/m2
-
 byte light_int = 128;                                                  //Changes potentiometer resistance from 10kΩ to 0Ω [0-128]
 
+
+
+
 // OLED Display
+#define CS_OLED   10
 #define PIN_RESET 9                                                    // Connect RST to pin 9
 #define PIN_DC    8                                                    // Connect DC to pin 8
 #define DC_JUMPER 0                                                    // Set to either 0 (SPI, default) or 1 (I2C) based on jumper, matching the value of the DC Jumper
-MicroOLED oled(PIN_RESET, PIN_DC, CS_SPI);                             //SPI declaration
+MicroOLED oled(PIN_RESET, PIN_DC, CS_OLED);                             //SPI declaration
 
-int secs, mins, hours = 0;
+byte secs, mins, hours = 0;
+bool Display = false;
+
+
+
 
 // Gyroscope
 #define MPU_ADDR 0x068                                                 // I2C address of the MPU-6050
+byte MPU_SAMPLING = 5;
+
 long gyro_x_cal, gyro_y_cal, gyro_z_cal;
-int raw_gyro_x, raw_gyro_y, raw_gyro_z;
-float gyro_x, gyro_y, gyro_z;
-float acc_x, acc_y, acc_z, acc_mag;
-float temp_mpu;
+short gyro_x, gyro_y, gyro_z;
+short acc_x, acc_y, acc_z;
+short temp_mpu;
 
 
-// Modes
-bool lightOn = false;
+
 
 //  Time Keeping
-extern volatile unsigned long msecs = 0;
-extern volatile unsigned long oldmsecs = 0;
-unsigned long refTime = -1;
+volatile unsigned long msecs = 0;
+volatile unsigned long oldmsecs = 0;
+volatile unsigned long mpumsecs = 0;
+unsigned long refTime = 0;
+unsigned short refMsecs = 0;
+byte sec_Cycle = -1;
+bool mpu_Cycle = false;
+
 
 
 
@@ -76,20 +91,10 @@ unsigned long refTime = -1;
 void setup() {
   //Initialization
   Wire.begin();                                                        //Start I2C as master
-  Serial.begin(9600);                                                  //Start Serial Channel
-  Serial.println("START$");                                            //Let PC know program started
-  oled.begin();                                                        // Initialize the OLED
-  oled.clear(ALL);                                                     // Clear the display's internal memory
-  oled.display();                                                      // Display what's in the buffer (splashscreen)
-  delay(1000);     // Delay 1000 ms
-  oled.clear(PAGE); // Clear the buffer.
-  
-  Serial.print("SMARTCLAMP version: ");
-  Serial.print(SMARTCLAMP_VERSION);
-  Serial.println("$");
-  printTitle((String)"V." + SMARTCLAMP_VERSION ,1);
-  
-  setup_mpu_6050_registers();                                          //Setup the registers of the MPU-6050 (500dfs / +/-8g) and start the gyro
+  Serial.begin(57600);                                                 //Start Serial Channel
+  Serial.println("START$");                                            //Let PC know program started  
+  Serial.println((String)"SMARTCLAMP version: " + SMARTCLAMP_VERSION + "$");
+  oledSetup();
 
   // Pin Declarations
   pinMode(SENSOR_A_PIN, INPUT);                                        //Set Light Sensor as Input
@@ -98,38 +103,18 @@ void setup() {
   pinMode(LIGHT_PIN, OUTPUT);                                          //Set Light Pin as Output
   digitalWrite(LIGHT_PIN, LOW);                                        //Start Light Source as Off
 
-  pinMode(13, OUTPUT);                                                 //Set On Board LED as Output
+  pinMode(POT_PIN, OUTPUT);                                            // Set Potentiometer's CS pin for SPI as Output
 
-  pinMode(CS_SPI, OUTPUT);
 
-  // Calibration
-
-  digitalWrite(13, HIGH);                                              //Set digital output 13 high to indicate startup
-
-  oled.clear(PAGE);
-  printTitle("Dont\nMove", 0);
-  Serial.println("Calibrating gyro$"); 
-  
-  for (int cal_int = 0; cal_int < 2000 ; cal_int ++){                  //Run this code 2000 times
-    read_mpu_6050_data();                                              //Read the raw acc and gyro data from the MPU-6050
-    gyro_x_cal += raw_gyro_x;                                              //Add the gyro x-axis offset to the gyro_x_cal variable
-    gyro_y_cal += raw_gyro_y;                                              //Add the gyro y-axis offset to the gyro_y_cal variable
-    gyro_z_cal += raw_gyro_z;                                              //Add the gyro z-axis offset to the gyro_z_cal variable
-    delay(3);                                                          //Delay 3us to simulate the 250Hz program loop
-  }
-  gyro_x_cal /= 2000;                                                  //Divide the gyro_x_cal variable by 2000 to get the average offset
-  gyro_y_cal /= 2000;                                                  //Divide the gyro_y_cal variable by 2000 to get the average offset
-  gyro_z_cal /= 2000;                                                  //Divide the gyro_z_cal variable by 2000 to get the average offset
-
-  digitalWrite(13, LOW);
+  // MPU Setup
+  registers_Error();
+  setup_mpu_6050_registers();                                          //Setup the registers of the MPU-6050 (500dfs / +/-8g) and start the gyro
+  calibrate_Gyro();
 
   SPI.begin();
+  write_potentiometer((byte)128);
   attachInterrupt(0, isr1, RISING);                                    //Interrupt function isr1 triggered by rising edge at PIN D2
   Timer2init();
-
-  oled.clear(PAGE);
-  printTitle("Done", 0);
-  Serial.println("CALIBRATION DONE$");
 }
 
 
@@ -141,29 +126,74 @@ void setup() {
 
 void loop() {
 
-  read_SERIAL();
+  switch(sec_Cycle){
+
+    
+    case 1:
+//      Serial.println((String)"$" + msecs);                          //DEBUG: Used to check process' period
+      process_light_sensor();
+      sec_Cycle++;
+//      Serial.println((String)"#" + msecs);
+      break;
+
+    case 2:
+      write_SERIAL_1HZ();
+      sec_Cycle++;
+      break;
+
+    case 3:
+      processTime();
+      if (Display){sec_Cycle++;}
+      else{sec_Cycle = 0;}
+      break;
+
+    case 4:
+      oledProcess1();
+      sec_Cycle++;
+      break;
+
+    case 5:
+      oledProcess2();
+      sec_Cycle++;
+      break;
+
+    case 6:
+      oledProcess3();
+      sec_Cycle++;
+      break;
+
+    case 7:
+      oledProcess4();
+      sec_Cycle++;
+      break;
+
+    case 8:
+      oledProcess5();
+      sec_Cycle++;
+      break;
+
+    default:
+      read_SERIAL();
+  }
+  
+  check_MPU();
   
   if (msecs - oldmsecs >= 1000){
-    
     oldmsecs = msecs;
+    refMsecs = 0;
     refTime++;
-    processTime();
-
-    write_potentiometer(light_int);
-    
-    process_light_sensor();
-    read_mpu_6050_data();
-    process_mpu_6050_data();
-
-    write_SERIAL();
-    printStats();
-
-    if (lightOn)  {digitalWrite(LIGHT_PIN, HIGH);}
-    else  {digitalWrite(LIGHT_PIN, LOW);}
-
+    sec_Cycle = 1;
   }
 }
 
+void check_MPU(){
+  if ( (msecs - mpumsecs >= (1000/MPU_SAMPLING)) and (refMsecs < 1000)){
+    mpumsecs = msecs;
+    read_mpu_6050_data();
+    write_SERIAL_MPU();
+    refMsecs += (1000/MPU_SAMPLING);
+  }
+}
 
 //////////////////////////////////////////////////////////////////////////////////
 //
@@ -204,52 +234,105 @@ void processSerialBuffer(){                                          // Subrouti
         lightOn = true;
         Serial.print("Light On: ");
         Serial.println(lightOn);
+        digitalWrite(LIGHT_PIN, HIGH);
       }
       else if( toupper(serialBuffer[bufferPos+2]) == 'F'){
         // LOF - Laser OF
         lightOn = false;
         Serial.print("Light On: ");
         Serial.println(lightOn);
+        digitalWrite(LIGHT_PIN, LOW);
       }
     }
   }
+
+  if( toupper(serialBuffer[bufferPos]) == 'D'){
+    if( toupper(serialBuffer[bufferPos+1]) == 'O'){
+      if( toupper(serialBuffer[bufferPos+2]) == 'N'){
+        // DON - Display ON
+        Display = true;
+//        Serial.println("Display On");
+      }
+      else if( toupper(serialBuffer[bufferPos+2]) == 'F'){
+        // DOF - Display OFF
+        Display = false;
+//        Serial.println("Display Off");
+        oled.clear(PAGE);
+        oled.display();  
+      }
+    }
+  }
+  
   if( toupper(serialBuffer[bufferPos]) == 'S'){
     if( toupper(serialBuffer[bufferPos+1]) == 'L'){
       if( toupper(serialBuffer[bufferPos+2]) == 'I'){
         // SLI - Set Light Intensity
         bufferPos += 3;
         light_int = getSerialIntArgument();
-        
+        write_potentiometer(light_int);
+        }
+      }
+    if( toupper(serialBuffer[bufferPos+1]) == 'M'){
+      if( toupper(serialBuffer[bufferPos+2]) == 'S'){
+        // SMS - Set MPU Sampling
+        bufferPos += 3;
+        MPU_SAMPLING = getSerialIntArgument();
         }
       }
     }
   }
 
-void write_SERIAL(){                                                 //Subroutine for writing toSerial
-  Serial.print("\ttime=");
-  Serial.print((unsigned long)refTime);
-  Serial.print("\tIa=");
+void write_SERIAL_1HZ(){                                                 //Subroutine for writing toSerial
+  Serial.print("\tt=");
+  Serial.print((float)refTime);
+  Serial.print("\tI=");
   Serial.print((float)Ia);
-  Serial.print("\tlightOn=");
+  Serial.print("\tl=");
   Serial.print(lightOn);
-  Serial.print("\tgyro_x=");
-  Serial.print((float)gyro_x);
-  Serial.print("\tgyro_y=");
-  Serial.print((float)gyro_y);
-  Serial.print("\tgyro_z=");
-  Serial.print((float)gyro_z);
-  Serial.print("\tacc_x=");
-  Serial.print((float)acc_x);
-  Serial.print("\tacc_y=");
-  Serial.print((float)acc_y);
-  Serial.print("\tacc_z=");
-  Serial.print((float)acc_z);
-  Serial.print("\tacc_mag=");
-  Serial.print((float)acc_mag);
-  Serial.print("\ttemp_mpu=");
-  Serial.print((float)temp_mpu);
-  Serial.print("\ttemp_ard=");
-  Serial.print(getArduinoTemp(),2);
+  Serial.print("\ttm=");
+  Serial.print((int)temp_mpu);
+//  Serial.print("\tta=");
+//  Serial.print(getArduinoTemp(),2);
+  Serial.println("$");
+}
+
+
+void write_SERIAL_MPU(){                                                 //Subroutine for writing toSerial
+  Serial.print("\tr=");
+//  Serial.print("\t");
+  Serial.print(refMsecs);
+  Serial.print("\tgx=");
+//  Serial.print("\t");
+  Serial.print((short)gyro_x);
+  Serial.print("\tgy=");
+//  Serial.print("\t");
+  Serial.print((short)gyro_y);
+  Serial.print("\tgz=");
+//  Serial.print("\t");
+  Serial.print((short)gyro_z);
+  Serial.print("\tax=");
+//  Serial.print("\t");
+  Serial.print((short)acc_x);
+  Serial.print("\tay=");
+//  Serial.print("\t");
+  Serial.print((short)acc_y);
+  Serial.print("\taz=");
+//  Serial.print("\t");
+  Serial.print((short)acc_z);
+  Serial.println("$");
+}
+
+
+void write_SERIAL_CAL(){                                                    //Subroutine for writing toSerial
+  Serial.print("\tgxc=");
+//  Serial.print("\t");
+  Serial.print((short)gyro_x_cal);
+  Serial.print("\tgyc=");
+//  Serial.print("\t");
+  Serial.print((short)gyro_y_cal);
+  Serial.print("\tgzc=");
+//  Serial.print("\t");
+  Serial.print((short)gyro_z_cal);
   Serial.println("$");
 }
 
@@ -262,11 +345,15 @@ float getSerialFloatArgument(){
 }
 
 
+
+
+
+
                                   // LIGHT DETECTOR FUNCTIONS
 
 void process_light_sensor(){
   
-  unsigned long na = cnta - oldcnta;
+  unsigned short na = cnta - oldcnta;
   oldcnta = cnta;
   Ia = ((float)na/6);
   
@@ -274,11 +361,16 @@ void process_light_sensor(){
 
 void write_potentiometer(int value)
 {
-digitalWrite(CS_SPI, LOW);
+digitalWrite(POT_PIN, LOW);
 SPI.transfer(POT_ADDR);
 SPI.transfer(value);
-digitalWrite(CS_SPI, HIGH);
+digitalWrite(POT_PIN, HIGH);
 }
+
+
+
+
+
 
                                   // MPU 6050 FUNCTIONS
 
@@ -302,6 +394,37 @@ void setup_mpu_6050_registers(){
   Wire.endTransmission();                                              //End the transmission
 }
 
+void calibrate_Gyro(){
+  oled.clear(PAGE);                                                    // Clear the buffer.
+  oled.setCursor(0, 0);                                                // Set cursor to top-left
+  oled.setFontType(0);                                                 // Smallest font
+  oled.print("GYRO CAL");
+  oled.setCursor(0, 16);                                               // Set cursor to top-middle-left
+  oled.print("DONT");
+  oled.setCursor(0, 32);
+  oled.print("MOVE");
+  oled.display();
+  Serial.println("CALIBRATING$"); 
+  
+  for (int cal_int = 0; cal_int < 2000 ; cal_int ++){                  //Run this code 2000 times
+    read_mpu_6050_data();                                              //Read the raw acc and gyro data from the MPU-6050
+    gyro_x_cal += gyro_x;                                              //Add the gyro x-axis offset to the gyro_x_cal variable
+    gyro_y_cal += gyro_y;                                              //Add the gyro y-axis offset to the gyro_y_cal variable
+    gyro_z_cal += gyro_z;                                              //Add the gyro z-axis offset to the gyro_z_cal variable
+    delay(3);                                                          //Delay 3us to simulate the 250Hz program loop
+  }
+  gyro_x_cal /= 2000;                                                  //Divide the gyro_x_cal variable by 2000 to get the average offset
+  gyro_y_cal /= 2000;                                                  //Divide the gyro_y_cal variable by 2000 to get the average offset
+  gyro_z_cal /= 2000;                                                  //Divide the gyro_z_cal variable by 2000 to get the average offset
+
+  oled.clear(PAGE);
+  printTitle("Done", 0);
+  Serial.println("CALIBRATION DONE$");
+  write_SERIAL_CAL();
+  delay(1000);
+  oled.clear(PAGE);
+  oled.display(); 
+}
 
 void read_mpu_6050_data(){                                             //Subroutine for reading the raw gyro and accelerometer data
   Wire.beginTransmission(0x68);                                        //Start communicating with the MPU-6050
@@ -313,33 +436,28 @@ void read_mpu_6050_data(){                                             //Subrout
   acc_y = Wire.read()<<8|Wire.read();                                  //Add the low and high byte to the acc_y variable
   acc_z = Wire.read()<<8|Wire.read();                                  //Add the low and high byte to the acc_z variable
   temp_mpu = Wire.read()<<8|Wire.read();                               //Add the low and high byte to the temperature variable
-  raw_gyro_x = Wire.read()<<8|Wire.read();                             //Add the low and high byte to the raw_gyro_x variable
-  raw_gyro_y= Wire.read()<<8|Wire.read();                              //Add the low and high byte to the raw_gyro_yvariable
-  raw_gyro_z= Wire.read()<<8|Wire.read();                              //Add the low and high byte to the raw_gyro_zvariable
+  gyro_x = Wire.read()<<8|Wire.read();                                 //Add the low and high byte to the raw_gyro_x variable
+  gyro_y= Wire.read()<<8|Wire.read();                                  //Add the low and high byte to the raw_gyro_yvariable
+  gyro_z= Wire.read()<<8|Wire.read();                                  //Add the low and high byte to the raw_gyro_zvariable
 
 }
 
 void process_mpu_6050_data(){
   //Gyro Angle Calibration Offset
-  raw_gyro_x -= gyro_x_cal;                                            //Subtract the offset calibration value from the raw_gyro_x value
-  raw_gyro_y -= gyro_y_cal;                                            //Subtract the offset calibration value from the raw_gyro_yvalue
-  raw_gyro_z -= gyro_z_cal;                                            //Subtract the offset calibration value from the raw_gyro_zvalue
+  gyro_x -= (short)gyro_x_cal;                                            //Subtract the offset calibration value from the raw_gyro_x value
+  gyro_y -= (short)gyro_y_cal;                                            //Subtract the offset calibration value from the raw_gyro_yvalue
+  gyro_z -= (short)gyro_z_cal;                                            //Subtract the offset calibration value from the raw_gyro_zvalue
   
   //Gyro angle calculations (Raw Gyro) = ( 1 º/S) * (65.5 s/º)
-  gyro_x = raw_gyro_x / 65.5;                                          //Calculate the gyro_x in º/s
-  gyro_y = raw_gyro_y / 65.5;                                          //Calculate the gyro_y in º/s
-  gyro_z = raw_gyro_z / 65.5;                                          //Calculate the gyro_z in º/s
-
-  
   //Accelerometer angle calculations (Raw Acc) = (1 g) * (4,096 / g)
-  acc_mag = (sqrt((acc_x*acc_x)+(acc_y*acc_y)+(acc_z*acc_z)))/4096;   //Calculate the total accelerometer vector
-  acc_x /= 4096;                                                      //Calculate the gyro_x in º/s
-  acc_y /= 4096;                                                      //Calculate the gyro_y in º/s
-  acc_z /= 4096;                                                      //Calculate the gyro_z in º/s
-
-  temp_mpu = (temp_mpu + 11379)/340;
   
 }
+
+
+
+
+
+
 
                                   // INTERRUPT ROUTINES
 
@@ -374,7 +492,43 @@ ISR(TIMER2_OVF_vect) {
   TIFR2 = 0x00;                                                         // clear timer overflow flag
 };
 
+
+
+
+
+
+
+
                                   // DISPLAY FUNCTIONS
+void oledSetup(){
+  oled.begin();                                                        // Initialize the OLED
+  oled.clear(ALL);                                                     // Clear the display's internal memory
+  oled.display();
+  delay(1000);
+  oled.clear(PAGE);                                                   // Clear the buffer.
+  oled.setCursor(0, 0);                                               // Set cursor to top-left
+  oled.setFontType(0);                                                // Smallest font
+  oled.print("SMART");
+  oled.setCursor(0, 16);                                              // Set cursor to top-middle-left
+  oled.print("CLAMP");
+  oled.setCursor(0, 32);
+  oled.print((String)"V."+ SMARTCLAMP_VERSION);
+  oled.display();
+  delay(2000);                                                        // Delay so user may see start screen
+  oled.clear(PAGE);                                                   // Clear the buffer.
+}
+
+void registers_Error(){
+  oled.clear(PAGE);                                                   // Clear the buffer.
+  oled.setCursor(0, 0);                                               // Set cursor to top-left
+  oled.setFontType(0);                                                // Smallest font
+  oled.print("MPU REG");
+  oled.setCursor(0, 16);                                              // Set cursor to top-middle-left
+  oled.print("ERROR");
+  oled.setCursor(0, 32);
+  oled.print("RESET");
+  oled.display();
+}
 
 void printTitle(String title, int font)
 {
@@ -392,24 +546,32 @@ void printTitle(String title, int font)
   oled.display();
 }
 
-void printStats(){
-  oled.clear(PAGE);            // Clear the display
-  oled.setCursor(0, 0);        // Set cursor to top-left
-  oled.setFontType(0);         // Smallest font
-  oled.print("T:");          // Print "T"
-  oled.setFontType(0);         // 7-segment font
+void oledProcess1(){
+  oled.clear(PAGE);                                                   // Clear the display
+  oled.setCursor(0, 0);                                               // Set cursor to top-left
+  oled.setFontType(0);                                                // Smallest font
+  oled.print("T:");                                                   // Print "T"
+}
+
+void oledProcess2(){
+  if (hours > 0){
+    oled.print((String)hours + ":");  
+  }
   if (secs >= 10){
-    oled.print((String)mins+":"+secs);        // Print a0 reading
+    oled.print((String)mins+":"+secs);                                
   }else{
     oled.print((String)mins+":0"+secs); 
   }
-  oled.setCursor(0, 16);       // Set cursor to top-middle-left
-  oled.setFontType(0);         // Repeat
+}
+
+void oledProcess3(){
+  oled.setCursor(0, 16);                                               // Set cursor to top-middle-left
   oled.print("I:");
-  oled.setFontType(0);
   oled.print(Ia);
+  }
+
+void oledProcess4(){
   oled.setCursor(0, 32);
-  oled.setFontType(0);
   oled.print("LED: "); 
   oled.setFontType(1);
   if (lightOn){
@@ -417,9 +579,16 @@ void printStats(){
   }else{
     oled.print("OFF");
   }
+}
+
+void oledProcess5(){
   oled.display();
-  
   }
+
+
+
+
+  
                                   // OTHER FUNCTIONS
 
 void processTime(){
@@ -432,27 +601,4 @@ void processTime(){
     hours++;
     }
   }
-}
-
-double getArduinoTemp(){
-  // The internal temperature has to be used
-  // with the internal reference of 1.1V.
-  // Channel 8 can not be selected with
-  // the analogRead function yet.
-
-  // Set the internal reference and mux.
-  ADMUX = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
-  ADCSRA |= _BV(ADEN);  // enable the ADC
-
-  ADCSRA |= _BV(ADSC);  // Start the ADC
-
-  // Detect end-of-conversion
-  while (bit_is_set(ADCSRA,ADSC));
-
-  #define TEMP_OFFSET (7)
-  #define AD2VOLTS          (1.1/1023.0) //1.1v=1023
-  #define VOLTS2DEGCELSIUS  (25.0/0.314)
-
-  // The returned temperature is in degrees Celcius.
-  return ADCW * AD2VOLTS * VOLTS2DEGCELSIUS - TEMP_OFFSET;
 }
