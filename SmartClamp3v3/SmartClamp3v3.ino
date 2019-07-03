@@ -11,7 +11,7 @@
 //////////////////////////////
 
 
-#define SMARTCLAMP_VERSION  "0.12"
+#define SMARTCLAMP_VERSION  "0.1"
 #include <PinChangeInt.h>                                              // DEPRECATED: Should consider chanaging to EnableInterrupt.h Library when given the time
 #include <Wire.h>                                                      //Enables I2C Comms
 #include <SPI.h>                                                       //Enables SPI Comms
@@ -133,41 +133,37 @@ void loop() {
 //      Serial.println((String)"$" + msecs);                          //DEBUG: Used to check process' period
       process_light_sensor();
       sec_Cycle++;
-//      Serial.println((String)"#" + msecs);
+      write_SERIAL_1HZ();
+//      Serial.println((String)"$" + msecs); 
       break;
 
     case 2:
-      write_SERIAL_1HZ();
-      sec_Cycle++;
-      break;
-
-    case 3:
       processTime();
       if (Display){sec_Cycle++;}
       else{sec_Cycle = 0;}
       break;
 
-    case 4:
+    case 3:
       oledProcess1();
       sec_Cycle++;
       break;
 
-    case 5:
+    case 4:
       oledProcess2();
       sec_Cycle++;
       break;
 
-    case 6:
+    case 5:
       oledProcess3();
       sec_Cycle++;
       break;
 
-    case 7:
+    case 6:
       oledProcess4();
       sec_Cycle++;
       break;
 
-    case 8:
+    case 7:
       oledProcess5();
       sec_Cycle++;
       break;
@@ -175,7 +171,7 @@ void loop() {
     default:
       read_SERIAL();
   }
-  
+
   check_MPU();
   
   if (msecs - oldmsecs >= 1000){
@@ -183,15 +179,6 @@ void loop() {
     refMsecs = 0;
     refTime++;
     sec_Cycle = 1;
-  }
-}
-
-void check_MPU(){
-  if ( (msecs - mpumsecs >= (1000/MPU_SAMPLING)) and (refMsecs < 1000)){
-    mpumsecs = msecs;
-    read_mpu_6050_data();
-    write_SERIAL_MPU();
-    refMsecs += (1000/MPU_SAMPLING);
   }
 }
 
@@ -394,6 +381,9 @@ void setup_mpu_6050_registers(){
   Wire.endTransmission();                                              //End the transmission
 }
 
+
+
+
 void calibrate_Gyro(){
   oled.clear(PAGE);                                                    // Clear the buffer.
   oled.setCursor(0, 0);                                                // Set cursor to top-left
@@ -425,6 +415,17 @@ void calibrate_Gyro(){
   oled.clear(PAGE);
   oled.display(); 
 }
+
+
+void check_MPU(){
+  if ( (msecs - mpumsecs >= (1000/MPU_SAMPLING)) and (refMsecs < 1000)){
+    mpumsecs = msecs;
+    read_mpu_6050_data();
+    write_SERIAL_MPU();
+    refMsecs += (1000/MPU_SAMPLING);
+  }
+}
+
 
 void read_mpu_6050_data(){                                             //Subroutine for reading the raw gyro and accelerometer data
   Wire.beginTransmission(0x68);                                        //Start communicating with the MPU-6050
