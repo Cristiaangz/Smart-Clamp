@@ -31,8 +31,8 @@ import logging
 mpl_logger = logging.getLogger("matplotlib")
 mpl_logger.setLevel(logging.WARNING)
 
-SCVERSION = 0.12
-BAUD_RATE = 57600
+SCVERSION = 0.13
+BAUD_RATE = 115200
 
 print("\n\nSTART")
 print("SMARTCLAMP.PY VERSION: ",SCVERSION)
@@ -40,9 +40,14 @@ print("SMARTCLAMP.PY VERSION: ",SCVERSION)
 CMDlist = [
 "Connect: connect to Smart Clamp",
 "Disconnect: Disconnect from Smart Clamp",
-"Test: Tests Irradience at different brightness levels",
+"Test: Automatic Tests",
 "LON: Turn on Laser / LED",
 "LOF: Turn off Laser / LED",
+"MON: Turn on MPU",
+"MOF: Turn off MPU",
+"SON: Turn on Light Sensor",
+"SOF: Turn off Light Sensor",
+"Sample: Set Sampling Rate",
 "SLI: Set Light Intensity",
 "V: Toggle verbose output",
 "Quit: Close Program" ]
@@ -81,22 +86,24 @@ class SmartClamp:
         self.ser = None             ## Stores the serial connection
         self.threads = 0            ## Number of other than main thread
         self.lock = threading.Lock()## Threading Lock
+        self.testDone = threading.Event()
+        self.testContinue = threading.Event()
 
         #Variables for logging
         self.logFileName = logname
 
         #Variables for Arduino
-        self.temp_ard = 0               ## Arduino Temperature
-        self.time = -1               ## Time since started collecting data
-        self.refTime = 0            ## Time given by Arduino
+        self.second = 0               ## Time since started collecting data
+        self.msecs = -1
         self.verbose = False        ## Prints the readings
+        self.targetTime = -1
 
         #Variables for Light Sensor
         self.Ia = 0                 ## Intensity of Sensor A in uW/m2
 
         #Variables for Light Source
         self.LightOn = False
-        self.potentiometer = lightIntensity
+        self.lightInt = lightIntensity
 
         #Variables for Gyro
         self.calibrated = threading.Event()
@@ -109,11 +116,13 @@ class SmartClamp:
         self.gyro_x = 0
         self.gyro_y = 0
         self.gyro_z = 0
+        self.gyro_x_cal = 0
+        self.gyro_y_cal = 0
+        self.gyro_z_cal = 0
 
         #Variables for plotting
         self.times = []
         self.Ias = []
-        self.temp_ards = []
         self.LONs = []
         self.acc_xs = []
         self.acc_ys = []
@@ -122,6 +131,8 @@ class SmartClamp:
         self.gyro_xs = []
         self.gyro_ys = []
         self.gyro_zs = []
+
+
 
     def __delete__(self):
         self.closeSerialSession()
@@ -237,8 +248,8 @@ class SmartClamp:
         new_sample_available = False
         self.new_sample_available = False
 
-        self.LogToCSVFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
-        #self.LogToTxtFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tArd Temp [C])\tMPU Temp [C]\n')
+        self.LogToCSVFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tMPU Temp [C]\n')
+        #self.LogToTxtFile('Time [s]\tIntensity A\tLaser On\tAcX\tAcY\tAcZ\tGyX\tGyY\tGyZ\tMPU Temp [C]\n')
 
         self.lock.release()
 
@@ -251,7 +262,7 @@ class SmartClamp:
                         temp_response = "";
                 except IndexError:
                     continue
-                except :
+                except:
                     print ('except when reading response')
                     self.connected = False
                     self.connecting = True
@@ -259,20 +270,20 @@ class SmartClamp:
 
                 if len(response) > 1 and response[-3] == '$':
                     response = response[:-3] + response[-2:-1]
-                    #print(response)
+                    # print(response)
                     #print(response[-3])
 
                     if response.find('START') == 0:
                         ## Procedures to do at Start. May be replicated for other comms
-                        print("\nCalibrating")
+                        print("\nCALIBRATING. Dont Move The Smart Clamp")
                         pass
-                    if response.find('CALIBRATION DONE') == 0:
+                    if response.find('READY') == 0:
                         ## Procedures to do at Start. May be replicated for other comms
                         print("\nCalibration Done")
+                        self.calibrated.set()
                         if self.verbose:
                             print('\nStart Time:', datetime.datetime.now().strftime('%H:%M:%S'), "\n")
-                            print('Time [s]\tIntensity\tLight\tAx\tAy\tAz\tGx\tGy\tGz\tArd Temp [C])\tMPU Temp [C]\n')
-                        self.calibrated.set()
+                            print('Time [s]\tIntensity\tLight\tAx\tAy\tAz\tGx\tGy\tGz\tMPU Temp [C]\n')
                         pass
 
                     for (var, value) in re.findall(r'([^=\t ]*)=([-0-9\.]+)', response):
@@ -282,16 +293,18 @@ class SmartClamp:
 
 
                         if var == 't':
-                            if value != self.time:
+                            if value != self.second:
                                 # self.new_sample_available = True
-                                self.time = float(value)
-                                # self.refTime = long(value)
+                                self.second = int(value)
+                                if self.second == self.targetTime:
+                                    self.testContinue.set()
+
+                        if var == 'ms':
+                            self.new_sample_available = True
+                            self.msecs = int(value)
 
                         elif var == 'I':
-                            self.Ia = float(value)
-
-                        elif var == 'ta':
-                            self.temp_ard = float(value)
+                            self.Ia = float(value)/6
 
                         elif var == 'l':
                             self.LightOn = bool(value)
@@ -320,6 +333,15 @@ class SmartClamp:
                         elif var == 'tm':
                             self.temp_mpu = (float(value)+ 12412.0)/340.0
 
+                        elif var == 'gxc':
+                            self.gyro_x_cal = float(value)
+
+                        elif var == 'gyc':
+                            self.gyro_y_cal = float(value)
+
+                        elif var == 'gzc':
+                            self.gyro_z_cal = float(value)
+
                     response = ""
 
 
@@ -327,9 +349,8 @@ class SmartClamp:
 
                 #Update data list
 
-                    self.times.append(self.refTime)
+                    self.times.append(float('{}.{}'.format(self.second, self.msecs)))
                     self.Ias.append(self.Ia)
-                    self.temp_ards.append(self.temp_ard)
                     self.LONs.append(self.LightOn)
                     self.acc_xs.append(self.acc_x)
                     self.acc_ys.append(self.acc_y)
@@ -339,7 +360,7 @@ class SmartClamp:
                     self.gyro_ys.append(self.gyro_y)
                     self.gyro_zs.append(self.gyro_z)
 
-                    logstring = '{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(self.time, self.Ia, self.LightOn, self.acc_x, self.acc_y, self.acc_z, self.gyro_x, self.gyro_y, self.gyro_z, self.temp_ard, self.temp_mpu)
+                    logstring = '{}.{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(self.second, self.msecs, self.Ia, self.LightOn, self.acc_x, self.acc_y, self.acc_z, self.gyro_x, self.gyro_y, self.gyro_z, self.temp_mpu)
 
                     if self.verbose:
                         print (datetime.datetime.now().strftime('%H:%M:%S'), logstring, sep=" | ")
@@ -354,7 +375,6 @@ class SmartClamp:
                     # self.logfile.close()
                     # self.lock.release()
                     self.new_sample_available = False
-                #time.sleep(0.5)
 
 
 
@@ -408,33 +428,81 @@ class SmartClamp:
             print("\n\nGraph Saved. Close the graph to start next test.")
 
     def brightTest(self, timeInt=20, numLevels = 8):
-        self.testDone = threading.Event()
         level = 1
-        if self.connected and self.LightOn and self.refTime < timeInt:
+        if self.connected and self.LightOn:
             self.ser.write('LOF\n'.encode())
             self.LightOn = False
         self.calibrated.wait()
         while self.connected:
-            print("self.time: ", self.time, "\tself.potentiometer: ", self.potentiometer)
-            if self.time > (level * timeInt):
-                print("self.time: ", self.time)
+            if self.second > ((level * timeInt) - 1):
+                print("self.second: ", self.second)
                 level += 1
                 if level == 2:
                     self.ser.write('LON\n'.encode())
                     print('Light Turned On')
                 if level > 2 and level <= numLevels:
-                    self.potentiometer -= 1
+                    self.lightInt -= 1
 
-                cmd = "SLI "+ str(self.potentiometer)+"\n"
+                cmd = "SLI "+ str(self.lightInt)+"\n"
                 self.ser.write(cmd.encode())
-                print("Potentiometer Level: ", self.potentiometer)
+                print("Potentiometer Level: ", self.lightInt)
 
-            if level > numLevels and self.time > (numLevels * timeInt) :
+            if level > numLevels and self.second > (numLevels * timeInt) :
                 self.ser.write('LOF\n'.encode())
                 self.LightOn = False
                 self.done = True
                 self.testDone.set()
                 break
+
+    def samplingTest(self, timeInt=60, intensity=105, light_Sampling=100, mpu_Sampling = 100):
+        print("Sampling Test Started")
+        self.calibrated.wait()
+
+        # Set appropriate intensity
+        cmd = "SLI "+ str(intensity)+"\n"
+        self.ser.write(cmd.encode())
+
+        #Set light sampling rate
+        self.ser.write('SON\n'.encode())
+        cmd = "SLS "+ str(light_Sampling)+"\n"
+        self.ser.write(cmd.encode())
+
+        #Set MPU Sampling Rate
+        self.ser.write('MOF\n'.encode())
+        cmd = "SMS "+ str(mpu_Sampling)+"\n"
+        self.ser.write(cmd.encode())
+
+        # Start with only Light sensor on
+        self.ser.write('LON\n'.encode())
+        self.LightOn = True
+
+        self.targetTime = (timeInt)
+        self.testContinue.wait()
+        self.testContinue.clear()
+
+        print("MPU Mode")
+        self.ser.write('SOF\n'.encode())
+        self.ser.write('MON\n'.encode())
+        self.light_Mode = False
+        self.targetTime = (timeInt*2)
+        self.testContinue.wait()
+        self.testContinue.clear()
+        self.testDone.set()
+        self.done = True
+
+        # while self.connected:
+        #     if self.second > (timeInt - 1) and self.light_Mode:
+        #         print("MPU Mode")
+        #         self.ser.write('SOF\n'.encode())
+        #         self.ser.write('MON\n'.encode())
+        #         self.light_Mode = False
+        #
+        #     if self.second > (timeInt * 2) :
+        #         self.ser.write('LOF\n'.encode())
+        #         self.LightOn = False
+        #         self.done = True
+        #         self.testDone.set()
+        #         break
 
 
 ##################################################
@@ -454,12 +522,17 @@ def processInput(input, ID=0):
         'Q': quitProg,
         'LON' : LON,
         'LOF' : LOF,
+        'MON' : MON,
+        'MOF' : MOF,
+        'SON' : SON,
+        'SOF' : SOF,
         'V' : verbose,
         'SLI' : setLightIntensity,
         'PLOT' : plot,
         'P' : plot,
         'TEST' : test,
-        'CHECK' : checkSC
+        'CHECK' : checkSC,
+        'SAMPLE' : setSampling
     }
     func=switcher.get(input, invalidCmd)
     try:
@@ -467,6 +540,8 @@ def processInput(input, ID=0):
     except TypeError:
         print("There was a TypeError when running", func)
         return
+    except IndexError:
+        print("Not connected to a Smartclamp")
 
 def checkSC(ID):
     print("Current default ID: ")
@@ -480,36 +555,66 @@ def connectToSC(ID, logname=datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'
     sc[ID].checkConnect()
 
 def test(ID):
-    # try:
-    timeInt = int(input("Set Time Interval Between Levels [seconds]: "))
-    numLevels = int(input("Set Number of Levels Testes [Min 2]: "))
-    initLightIntensity = int(input("Set Initial Light Intensity [32-128]: "))
-    runs = int(input("Set Number of Runs: "))
-    livePlot = input("Show Live Plot? (Y/N): ").upper()
-    naming = input("Custom Test Name? (Y/N): ").upper()
-    if naming == 'Y':
-        logname = input("Enter Log Name [no spaces]: ")
+    while True:
+        try:
+            test = int(input("Please choose a test:\n\n1) Bright Test\n2) Sampling Test\n>>\t"))
+            switcher={
+                1 : brightnessTest,
+                2 : samplingTest
+            }
+            func=switcher.get(test, invalidCmd)
+            try:
+                return func(ID)
+            except TypeError:
+                print("There was a TypeError when running", func)
+                return
+        except TypeError:
+            print("Incorrect Input")
 
-    for run in range(runs):
-        print("-------------------------------------------------------------------")
-        print("\nStarting Brightness Test ", run+1)
-        if (len(sc) == 0) or not sc[ID].connected:
-            if naming == 'Y':
-                connectToSC(ID, logname + "_" + str(run+1), initLightIntensity)
-            else:
-                connectToSC(ID, lightIntensity=initLightIntensity)
+def samplingTest(ID):
+    if (len(sc) == 0) or not sc[ID].connected:
+        connectToSC(ID)
 
-        testThread = threading.Thread(target=sc[ID].brightTest, args=(timeInt, numLevels), name='Brightness Test')
-        testThread.setDaemon(True)
-        if sc[ID].connected:
-            testThread.start()
-            if livePlot == "Y":
-                sc[ID].plotThread()
-            sc[ID].testDone.wait()
-        disconnectFromSC(ID)
-        print("Finished test ", run+1)
-    # except:
-    #     print("Something went wrong with Brightness Test")
+    testThread = threading.Thread(target=sc[ID].samplingTest, name='Sampling Test')
+    testThread.setDaemon(True)
+    if sc[ID].connected:
+        testThread.start()
+        sc[ID].plotThread()
+        sc[ID].testDone.wait()
+        sc[ID].testDone.clear()
+    disconnectFromSC(ID)
+
+def brightnessTest(ID):
+    try:
+        timeInt = int(input("Set Time Interval Between Levels [seconds]: "))
+        numLevels = int(input("Set Number of Levels Testes [Min 2]: "))
+        initLightIntensity = int(input("Set Initial Light Intensity [32-128]: "))
+        runs = int(input("Set Number of Runs: "))
+        livePlot = input("Show Live Plot? (Y/N): ").upper()
+        naming = input("Custom Test Name? (Y/N): ").upper()
+        if naming == 'Y':
+            logname = input("Enter Log Name [no spaces]: ")
+
+        for run in range(runs):
+            print("-------------------------------------------------------------------")
+            print("\nStarting Brightness Test ", run+1)
+            if (len(sc) == 0) or not sc[ID].connected:
+                if naming == 'Y':
+                    connectToSC(ID, logname + "_" + str(run+1), initLightIntensity)
+                else:
+                    connectToSC(ID, lightIntensity=initLightIntensity)
+
+            testThread = threading.Thread(target=sc[ID].brightTest, args=(timeInt, numLevels), name='Brightness Test')
+            testThread.setDaemon(True)
+            if sc[ID].connected:
+                testThread.start()
+                if livePlot == "Y":
+                    sc[ID].plotThread()
+                sc[ID].testDone.wait()
+            disconnectFromSC(ID)
+            print("Finished test ", run+1)
+    except:
+        print("Something went wrong with Brightness Test")
 
 
 def disconnectFromSC(ID):
@@ -534,6 +639,30 @@ def LOF(ID):
     except AttributeError:
         print("Not connected to Smart Clamp (>> connect)")
 
+def MON(ID):
+    try:
+        sc[ID].ser.write('MON\n'.encode())
+    except AttributeError:
+        print("Not connected to Smart Clamp (>> connect)")
+
+def MOF(ID):
+    try:
+        sc[ID].ser.write('MOF\n'.encode())
+    except AttributeError:
+        print("Not connected to Smart Clamp (>> connect)")
+
+def SON(ID):
+    try:
+        sc[ID].ser.write('SON\n'.encode())
+    except AttributeError:
+        print("Not connected to Smart Clamp (>> connect)")
+
+def SOF(ID):
+    try:
+        sc[ID].ser.write('SOF\n'.encode())
+    except AttributeError:
+        print("Not connected to Smart Clamp (>> connect)")
+
 def verbose(ID):
     try:
         sc[ID].verbose = not(sc[ID].verbose)
@@ -554,6 +683,32 @@ def setLightIntensity(ID):
                 sc[ID].ser.write(cmd.encode())
                 sc[ID].potentiometer = cmd
                 break
+        except AttributeError:
+            print("Not connected to Smart Clamp (>> connect)")
+            break
+
+def setSampling(ID):
+    while True:
+        try:
+            device = int(input("Set Sampling for:\n\t1)Light Detector\n\t2)MPU\n>>\t"))
+            sampling = int(input("Set sampling to [1-100]: "))
+        except ValueError:
+            print("Please enter an integer from 0 to 100")
+            continue
+        try:
+            if (1 <= sampling <= 100):
+                if device == 1:
+                    cmd = "SLS "+ str(sampling)+"\n"
+                    sc[ID].ser.write(cmd.encode())
+                    break
+                if device == 2:
+                    cmd = "SMS "+ str(sampling)+"\n"
+                    sc[ID].ser.write(cmd.encode())
+                    sc[ID].potentiometer = cmd
+                    break
+                else:
+                    print("Invalid device Number")
+                    break
         except AttributeError:
             print("Not connected to Smart Clamp (>> connect)")
             break
