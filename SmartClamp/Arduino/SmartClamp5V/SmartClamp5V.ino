@@ -11,7 +11,7 @@
 //////////////////////////////
 
 
-#define SMARTCLAMP_VERSION  "0.12"
+#define SMARTCLAMP_VERSION  "0.13"
 #include <PinChangeInt.h>                                              // DEPRECATED: Should consider chanaging to EnableInterrupt.h Library when given the time
 #include <Wire.h>                                                      //Enables I2C Comms
 #include <SPI.h>                                                       //Enables SPI Comms
