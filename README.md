@@ -1,2 +1,2 @@
-# turbidostat
-This is the GitHub for the Turbidostat Project under Professor Andras Gyorgy during the Summer of 2019
+# Smart Clamp Project
+This is the GitHub for the Smart Clamp Project under Professor Andras Gyorgy
