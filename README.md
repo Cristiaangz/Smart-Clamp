@@ -1,11 +1,11 @@
-## Smart Clamp Project
+# Smart Clamp Project
 This is the GitHub for the Smart Clamp Project under Professor Andras Gyorgy
 
-# 1. Statement of Project Summary
+## 1. Statement of Project Summary
 This project aims to develop a low-cost lab equipment add-on that enables remote monitoring of bacterial populations grown in standard lab flasks. The device should be able to accommodate a variety of flasks and bacterial strains, whilst not interfering with the contents’ growth, and utilize IoT capabilities for control and data transmission. Thus, the final prototype will measure cell density, weight, orientation and motion during incubation in temperature controlled shakers, will have inductive wireless charging, WiFi/Bluetooth communication and control capabilities. An onboard microcontroller will be used to direct the device’s functionality. The design layout, material choice, and electronic circuit will be optimized for size, compatibility, power consumption, signal-to-noise ratio, and cost.
-# 2. Background and Review of Literature
+## 2. Background and Review of Literature
 In the field of microbiology, it is often essential to quantify and monitor cell growth of bacterial populations. Monitoring is done by quantifying cell density over regular time intervals. Quantification is done through either manual counting methods like plating; automated counting methods like flow cytometry; or indirect cell counting like spectrophotometry. All these methodologies have clear drawbacks. Manual and indirect cell counting often requires physical sampling at regular intervals, which requires trained personnel, it is highly time intensive and increases the risk of contamination. Conversely, current automated counting methods require less attention but are either invasive or often prohibitively expensive. Coulter counters require instrumentation to be in contact with the growth medium, making them impractical within an incubator and posing a risk of contamination. Flow cytometry requires highly-specialized and expensive instrumentation, which makes them only accessible to well-funded, high-level research settings where high precision is needed. Thus, a low-cost non-invasive cell-count monitoring system is needed for a large variety of  applications.
 
 This project seeks inspiration from commercially available turbidostats, in their ability to give the user the constant updates on the amount of cells in the apparatus. The instrumentation’s add-on form factor is adopted so that existing experimental protocols require little to no modifications to gain the benefits of the sensory system.  
-# 3. Resources 
+## 3. Resources 
 3D printer, Soldering Tools, Standard Lab Glassware, Basic microbiology equipment. Lab personnel will be available for help. The students and the PI have all the required skillset and tools/equipment for the successful completion of the project. 
